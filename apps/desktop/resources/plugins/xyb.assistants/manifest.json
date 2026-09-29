@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.assistants",
+  "name": "智能助手",
+  "version": "0.1.0",
+  "description": "面向肿瘤患者与家属的助手技能集：病历、影像、基因、决策、临床、营养、心理、并发症、病理。按需加载，不替代医生诊断。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "assistants",
+        "title": { "en": "Assistants", "zh-CN": "智能助手" },
+        "icon": "bot",
+        "entry": "views/assistants.html",
+        "order": 40
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.assistants.list",
+        "title": "小胰宝：看看有哪些助手",
+        "keywords": ["助手", "智能体", "assistant", "病历", "营养", "心理"]
+      }
+    ],
+    "skills": [
+      "skills/medical-record.md",
+      "skills/imaging.md",
+      "skills/genomics.md",
+      "skills/decision-support.md",
+      "skills/nutrition.md",
+      "skills/psych-support.md",
+      "skills/complications.md",
+      "skills/pathology.md"
+    ],
+    "settings": [
+      {
+        "key": "diseaseFocus",
+        "title": "默认病种语境",
+        "type": "select",
+        "default": "pancreatic",
+        "enum": [
+          { "value": "pancreatic", "label": "胰腺癌（小胰宝）" },
+          { "value": "generic", "label": "通用（不预设病种）" }
+        ]
+      },
+      {
+        "key": "includePastoral",
+        "title": "今日心语包含信仰类箴言",
+        "type": "boolean",
+        "default": false
+      }
+    ]
+  },
+  "permissions": ["ui.view", "agent.prompt.inject"],
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.assistants.list"]
+}

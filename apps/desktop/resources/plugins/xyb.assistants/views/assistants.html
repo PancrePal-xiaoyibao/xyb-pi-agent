@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智能助手</title>
+    <style>
+      :root {
+        --mint: #299d8c;
+        --ink: #213139;
+        --body: #48565a;
+        --soft: #edf6f3;
+        --line: #dce7e3;
+        --bg: #ffffff;
+        --muted: #8b9a97;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e8f1ee;
+          --body: #b8c7c3;
+          --soft: #1f2928;
+          --line: #2a3735;
+          --bg: #161d1f;
+          --muted: #7d8f8c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(var(--pi-plugin-titlebar-height, 0px) + 16px) 16px 24px;
+        background: var(--bg);
+        color: var(--body);
+        font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+      .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; line-height: 1.7; }
+      .disclaimer {
+        margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--mint);
+        background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
+        line-height: 1.7;
+      }
+      .group-title {
+        font-size: 12px; color: var(--ink); font-weight: 600;
+        margin: 20px 0 8px;
+      }
+      .card {
+        border: 1px solid var(--line); border-radius: 10px;
+        padding: 11px 13px; margin-bottom: 8px;
+      }
+      .card .nm { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+      .card .ds { font-size: 12px; line-height: 1.65; color: var(--body); }
+      .card .how {
+        font-size: 11px; color: var(--muted); margin-top: 6px;
+        padding-top: 6px; border-top: 1px solid var(--line);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .foot {
+        margin-top: 20px; font-size: 11px; color: var(--muted);
+        line-height: 1.8; border-top: 1px solid var(--line); padding-top: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>智能助手</h1>
+    <div class="hint">
+      这里不是菜单，而是给助手看的技能清单。你直接用自己的话提问，助手会挑合适的技能来做。
+    </div>
+
+    <div class="disclaimer">
+      所有助手都只做信息整理，不能替代医生诊断，也不构成用药建议。
+    </div>
+
+    <div class="group-title">看资料</div>
+    <div class="card">
+      <div class="nm">病历助手</div>
+      <div class="ds">把病理、影像、化验、治疗史整理成一份结构化病情档案，缺失项会明确标出。</div>
+      <div class="how">试试说：帮我理一下病情 / 按模板收集我的病情信息</div>
+    </div>
+    <div class="card">
+      <div class="nm">影像助手</div>
+      <div class="ds">解读 CT / MRI / PET-CT 报告的字段与前后变化，讲清疗效评价是怎么算的。</div>
+      <div class="how">试试说：这次复查结果怎么看 / 病灶有没有变化</div>
+    </div>
+    <div class="card">
+      <div class="nm">病理助手</div>
+      <div class="ds">解读病理报告与免疫组化指标，按「重要提醒 / 针对性提示 / 简单科普」三段输出。</div>
+      <div class="how">试试说：这份病理报告什么意思 / Ki-67 高不高</div>
+    </div>
+    <div class="card">
+      <div class="nm">基因解读助手</div>
+      <div class="ds">解读基因与分子检测结果，按「是什么 → 临床意义 → 可讨论的方向」讲，并标注证据等级。</div>
+      <div class="how">试试说：这个突变意味着什么 / MSI 和 TMB 怎么看</div>
+    </div>
+
+    <div class="group-title">做判断</div>
+    <div class="card">
+      <div class="nm">决策辅助助手</div>
+      <div class="ds">按 MDT 框架把候选方案摊成多维度对比表，产出「该和医生讨论什么」，不替你决定。</div>
+      <div class="how">试试说：这两种方案帮我比较一下 / 按 MDT 思路理一下</div>
+    </div>
+    <div class="card">
+      <div class="nm">临床试验助手</div>
+      <div class="ds">在 ClinicalTrials.gov 与中国登记平台检索、筛选、整理候选试验，附来源与更新时间。</div>
+      <div class="how">试试说：帮我找胰腺癌正在招募的试验</div>
+    </div>
+
+    <div class="group-title">顾生活</div>
+    <div class="card">
+      <div class="nm">营养支持助手</div>
+      <div class="ds">营养风险评估、治疗期饮食安排、症状应对，并列明需要立即就医的信号。</div>
+      <div class="how">试试说：没胃口怎么办 / 体重一直掉怎么吃</div>
+    </div>
+    <div class="card">
+      <div class="nm">心理支持助手</div>
+      <div class="ds">情绪陪伴、家属照护压力、病情沟通方法，以及安宁疗护的基础知识。</div>
+      <div class="how">试试说：不知道该怎么告诉家人 / 最近总睡不着</div>
+    </div>
+    <div class="card">
+      <div class="nm">并发症助手</div>
+      <div class="ds">按红 / 黄 / 绿分级判断症状的紧急程度，给出就医时机。分级永远放在最前面。</div>
+      <div class="how">试试说：化疗后一直发烧要不要去医院</div>
+    </div>
+
+    <div class="foot">
+      助手技能都是纯 Markdown 文档，你可以直接读和改。<br />
+      其中「临床试验助手」由「找试验」插件提供——它需要联网检索，所以权限单独管理。<br />
+      心理支持出现危机信号时，助手会直接给出求助渠道，不会淡化处理。
+    </div>
+  </body>
+</html>
