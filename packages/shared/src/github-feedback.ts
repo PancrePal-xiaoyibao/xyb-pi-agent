@@ -1,3 +1,19 @@
+/**
+ * 反馈入口的目标仓库（小胰宝 fork 自有）。
+ *
+ * 上游把「反馈」和「发布产物」共用一个常量，指向 vastsa/PI-Desktop。
+ * 对患者产品这是隐私问题：患者点「反馈问题」会把 issue 提到上游仓库，
+ * 而报告里往往夹带病情、用药、就诊信息，不该落到第三方 issue tracker。
+ */
+export const GITHUB_FEEDBACK_REPO = "PancrePal-xiaoyibao/xyb-pi-agent";
+
+/**
+ * 发布产物所在仓库。远程 host（pi-host）按 `v<version>` 从这里取 tarball 与 sha256，
+ * 而小胰宝 fork 目前还没有自己的 Release，所以暂时沿用上游。
+ *
+ * 首次用 CI 发布自己的版本后，应把它也改为 GITHUB_FEEDBACK_REPO
+ * （release.yml 会一并上传 pi-host-<version>-linux-<arch>.tar.gz 与校验文件）。
+ */
 export const GITHUB_REPO = "vastsa/PI-Desktop";
 export const GITHUB_BUG_TEMPLATE = "bug_report.yml";
 export const GITHUB_ISSUE_ORIGIN = "https://github.com";
@@ -27,11 +43,11 @@ export function osLabelForFeedback(platform: string): FeedbackOsLabel {
 
 export function formatFeedbackEnvironment(info: FeedbackIssueContext): string {
   const host = info.hostVersion?.trim() || "unknown";
-  return `PI-Desktop ${info.version} · ${info.platform} ${info.arch} · protocol ${info.protocolVersion} · host ${host}`;
+  return `xyb-pi ${info.version} · ${info.platform} ${info.arch} · protocol ${info.protocolVersion} · host ${host}`;
 }
 
 export function buildBugReportUrl(info: FeedbackIssueContext): string {
-  const url = new URL(`${GITHUB_ISSUE_ORIGIN}/${GITHUB_REPO}/issues/new`);
+  const url = new URL(`${GITHUB_ISSUE_ORIGIN}/${GITHUB_FEEDBACK_REPO}/issues/new`);
   url.searchParams.set("template", GITHUB_BUG_TEMPLATE);
   url.searchParams.set("app-version", info.version);
   url.searchParams.set("os", osLabelForFeedback(info.platform));
@@ -49,7 +65,7 @@ export function assertFeedbackIssueUrl(url: string): void {
   if (parsed.origin !== GITHUB_ISSUE_ORIGIN) {
     throw new Error("invalid feedback URL origin");
   }
-  if (parsed.pathname !== `/${GITHUB_REPO}/issues/new`) {
+  if (parsed.pathname !== `/${GITHUB_FEEDBACK_REPO}/issues/new`) {
     throw new Error("invalid feedback URL path");
   }
   if (parsed.searchParams.get("template") !== GITHUB_BUG_TEMPLATE) {

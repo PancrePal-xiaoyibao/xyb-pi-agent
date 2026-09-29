@@ -33,7 +33,7 @@ export class DbSchemaTooNewError extends Error {
 
   constructor(schema: SchemaTooNew) {
     super(
-      `Local data uses database schema ${schema.found}, but this build supports ${schema.supported}. Install the newer PI-Desktop that last opened this data.`,
+      `Local data uses database schema ${schema.found}, but this build supports ${schema.supported}. Install the newer xyb-pi that last opened this data.`,
     );
     this.name = "DbSchemaTooNewError";
     this.found = schema.found;

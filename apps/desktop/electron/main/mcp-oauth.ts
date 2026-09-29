@@ -627,7 +627,7 @@ export class McpOAuthManager {
             res.end(
               this.renderHtml(
                 true,
-                "Authorization successful! You can close this tab and return to PI-Desktop.",
+                "Authorization successful! You can close this tab and return to xyb-pi.",
               ),
             );
 

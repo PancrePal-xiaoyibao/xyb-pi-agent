@@ -92,7 +92,7 @@ export const de = {
     "zoomOut": "Verkleinern",
     "toggleFullScreen": "Vollbild umschalten",
     "toggleDevTools": "Entwicklertools",
-    "appHelp": "PI-Desktop-Hilfe",
+    "appHelp": "xyb-pi-Hilfe",
     "openLogs": "Protokolle öffnen",
     "checkForUpdates": "Nach Updates suchen…"
   },

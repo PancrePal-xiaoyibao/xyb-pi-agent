@@ -87,8 +87,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "vastsa",
-        "repo": "PI-Desktop"
+        "owner": "PancrePal-xiaoyibao",
+        "repo": "xyb-pi-agent"
       }
     ],
     "extraMetadata": {

@@ -72,7 +72,9 @@ function createRelocatedUpdater(
   return platform === "win32" ? new RelocatedNsisUpdater(baseCachePath) : null;
 }
 
-export const RELEASES_URL = "https://github.com/vastsa/PI-Desktop/releases/latest";
+// 小胰宝 fork：手动更新模式下的跳转目标。上游原先指向 vastsa/PI-Desktop，
+// 会让患者在「有新版本」时被送到另一个产品的下载页，因此改为本仓库。
+export const RELEASES_URL = "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/latest";
 
 const AUTO_CHECK_INITIAL_DELAY_MS = 15_000;
 const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;

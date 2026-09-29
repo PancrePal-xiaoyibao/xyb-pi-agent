@@ -92,7 +92,7 @@ export const fr = {
     "zoomOut": "Zoom arrière",
     "toggleFullScreen": "Basculer en plein écran",
     "toggleDevTools": "Outils de développement",
-    "appHelp": "Aide PI-Desktop",
+    "appHelp": "Aide xyb-pi",
     "openLogs": "Journaux ouverts",
     "checkForUpdates": "Rechercher les mises à jour…"
   },
