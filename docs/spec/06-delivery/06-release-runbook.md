@@ -556,6 +556,17 @@ Manual smoke on a clean profile (`PI_DESKTOP_DATA_DIR=$(mktemp -d)`):
 
 ## 6. Native-runner release packages
 
+> **小胰宝 fork：实际产物名与本节示例不同。** 品牌化后 `artifactName` 已改为
+> `xiaoyibao-*`（见 `apps/desktop/package.json` 的 `build.mac/dmg/win/nsis`）：
+>
+> - macOS arm64：`xiaoyibao-<version>-arm64.dmg` / `xiaoyibao-<version>-arm64-mac.zip`
+> - macOS x64：`xiaoyibao-<version>-x64.dmg` / `xiaoyibao-<version>-x64-mac.zip`
+> - Windows x64：`xiaoyibao-Setup-<version>.exe`（NSIS）/ `xiaoyibao-Portable-<version>.zip`
+> - Linux x64：AppImage / deb / rpm
+>
+> 下面几节里的 `PI-Desktop-*` 是上游原文，尚未同步改名。
+
+
 The repository exposes native-runner commands for every release target. Each
 packaging command first runs `build:host-release`, then bundles the agent
 runtime and Electron app. D126/D285/D603 tag workflows publish these outputs and

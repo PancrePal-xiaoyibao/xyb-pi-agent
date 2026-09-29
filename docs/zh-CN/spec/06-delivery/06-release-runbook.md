@@ -467,6 +467,17 @@ project/Temporary 使用消息加会话图标创建控件。
 
 ## 6. 本机运行器发布包
 
+> **小胰宝 fork：实际产物名与本节示例不同。** 品牌化后 `artifactName` 已改为
+> `xiaoyibao-*`（见 `apps/desktop/package.json` 的 `build.mac/dmg/win/nsis`）：
+>
+> - macOS arm64：`xiaoyibao-<version>-arm64.dmg` / `xiaoyibao-<version>-arm64-mac.zip`
+> - macOS x64：`xiaoyibao-<version>-x64.dmg` / `xiaoyibao-<version>-x64-mac.zip`
+> - Windows x64：`xiaoyibao-Setup-<version>.exe`（NSIS）/ `xiaoyibao-Portable-<version>.zip`
+> - Linux x64：AppImage / deb / rpm
+>
+> 下面几节里的 `PI-Desktop-*` 是上游原文，尚未同步改名。
+
+
 该存储库为每个发布目标公开本机运行器构建命令。
 每个打包命令首先运行 `build:host-release`，然后捆绑代理
 运行时和 Electron 应用程序。D126/D285/D603 标签工作流程发布这些输出及其
