@@ -1,9 +1,9 @@
 {
-  "name": "@pi-desktop/desktop",
+  "name": "@xiaoyibao/desktop",
   "version": "0.15.10",
-  "desktopName": "pi-desktop.desktop",
+  "desktopName": "xiaoyibao.desktop",
   "private": true,
-  "description": "PI-Desktop Electron application",
+  "description": "小胰宝——面向肿瘤患者及家属的本地优先 AI 工作台",
   "homepage": "https://github.com/vastsa/PI-Desktop",
   "author": {
     "name": "vastsa",
@@ -79,8 +79,8 @@
     "zustand": "^5.0.15"
   },
   "build": {
-    "appId": "net.aiuo.pi-desktop",
-    "productName": "PI-Desktop",
+    "appId": "org.xiaoyibao.desktop",
+    "productName": "小胰宝",
     "directories": {
       "output": "release"
     },
@@ -141,7 +141,7 @@
       }
     ],
     "mac": {
-      "artifactName": "PI-Desktop-${version}-${arch}-mac.${ext}",
+      "artifactName": "xiaoyibao-${version}-${arch}-mac.${ext}",
       "target": [
         {
           "target": "dmg"
@@ -157,8 +157,8 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSLocalNetworkUsageDescription": "PI-Desktop needs local network access so agents can reach OpenAI-compatible providers, Ollama, and other AI endpoints running on your LAN. / PI-Desktop 需要本地网络访问权限，以便助手请求同一局域网中的 OpenAI 兼容服务、Ollama 等本地 AI 端点。",
-        "NSMicrophoneUsageDescription": "PI-Desktop plugins may use the microphone after you grant them audio access. / 在你授权后，PI-Desktop 插件可以使用麦克风。",
+        "NSLocalNetworkUsageDescription": "小胰宝 needs local network access so agents can reach OpenAI-compatible providers, Ollama, and other AI endpoints running on your LAN. / 小胰宝 需要本地网络访问权限，以便助手请求同一局域网中的 OpenAI 兼容服务、Ollama 等本地 AI 端点。",
+        "NSMicrophoneUsageDescription": "小胰宝 plugins may use the microphone after you grant them audio access. / 在你授权后，小胰宝 插件可以使用麦克风。",
         "NSBonjourServices": [
           "_http._tcp",
           "_https._tcp"
@@ -176,7 +176,7 @@
       ]
     },
     "dmg": {
-      "artifactName": "PI-Desktop-${version}-${arch}.${ext}",
+      "artifactName": "xiaoyibao-${version}-${arch}.${ext}",
       "background": "build/dmg-background.png",
       "icon": "build/icon.icns",
       "window": {
@@ -199,8 +199,8 @@
       ]
     },
     "win": {
-      "executableName": "PI-Desktop",
-      "artifactName": "PI-Desktop-Portable-${version}.${ext}",
+      "executableName": "xiaoyibao",
+      "artifactName": "xiaoyibao-Portable-${version}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -236,15 +236,15 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "PI-Desktop",
-      "artifactName": "PI-Desktop-Setup-${version}.${ext}"
+      "shortcutName": "小胰宝",
+      "artifactName": "xiaoyibao-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "PI-Desktop-Portable-${version}.${ext}"
+      "artifactName": "xiaoyibao-Portable-${version}.${ext}"
     },
     "deb": {
-      "packageName": "pi-desktop",
-      "artifactName": "pi-desktop_${version}_${arch}.${ext}"
+      "packageName": "xiaoyibao",
+      "artifactName": "xiaoyibao_${version}_${arch}.${ext}"
     },
     "rpm": {
       "packageName": "pi-desktop",

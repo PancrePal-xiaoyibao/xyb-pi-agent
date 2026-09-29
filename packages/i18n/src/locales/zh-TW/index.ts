@@ -94,7 +94,7 @@ export const zhTW = {
     zoomOut: "縮小",
     toggleFullScreen: "切換全屏",
     toggleDevTools: "開發者工具",
-    appHelp: "PI-Desktop 幫助",
+    appHelp: "xyb-pi 幫助",
     openLogs: "開啟日誌",
     checkForUpdates: "檢查更新…",
   },

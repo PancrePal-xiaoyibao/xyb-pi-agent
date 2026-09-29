@@ -1,6 +1,7 @@
 import { app, BrowserWindow, crashReporter, Menu, safeStorage } from "electron";
 import { createScheduledRunner } from "../runtime/scheduled-runner";
 import {
+  APP_DISPLAY_NAME,
   APP_NAME,
   APP_VERSION,
   ErrorCodes,
@@ -203,7 +204,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     if (storedBehavior) state.closeBehavior = storedBehavior;
     createTray();
     app.setAboutPanelOptions({
-      applicationName: APP_NAME,
+      applicationName: APP_DISPLAY_NAME,
       applicationVersion: APP_VERSION,
       version: APP_VERSION,
     });

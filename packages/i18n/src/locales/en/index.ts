@@ -99,7 +99,7 @@ export const en = {
     zoomOut: "Zoom Out",
     toggleFullScreen: "Toggle Full Screen",
     toggleDevTools: "Developer Tools",
-    appHelp: "PI-Desktop Help",
+    appHelp: "xyb-pi Help",
     openLogs: "Open Logs",
     checkForUpdates: "Check for Updates…",
   },

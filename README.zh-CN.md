@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="PI-Desktop" width="108" />
+<img src="docs/image/readme/logo.png" alt="小胰宝" width="108" />
 
-# PI-Desktop
+# 小胰宝
 
-### 可拆卸的 AI Agent 桌面工作台
+### 面向肿瘤患者及家属的本地优先 AI 桌面工作台
 
-**把项目、Agent、模型、插件和工作流，装进一个长期可用的桌面环境。**
+**把病例资料、AI 助手、用药/报告/康复流程，装进一个长期可用的桌面环境。**
 
 本地优先 · 模型自由 · 插件驱动 · macOS / Windows / Linux
 

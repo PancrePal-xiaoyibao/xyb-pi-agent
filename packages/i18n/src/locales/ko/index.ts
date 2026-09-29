@@ -101,7 +101,7 @@ export const ko = {
     zoomOut: "축소",
     toggleFullScreen: "전체 화면 전환",
     toggleDevTools: "개발자 도구",
-    appHelp: "PI-Desktop 도움말",
+    appHelp: "xyb-pi 도움말",
     openLogs: "로그 열기",
     checkForUpdates: "업데이트 확인…",
   },

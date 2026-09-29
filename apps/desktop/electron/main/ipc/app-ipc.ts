@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { listInstalledFonts } from "../system-fonts";
 import {
+  APP_DISPLAY_NAME,
   APP_NAME,
   APP_VERSION,
   ErrorCodes,
@@ -78,7 +79,7 @@ export function registerAppIpc({
         )
       : undefined;
     return {
-      name: APP_NAME,
+      name: APP_DISPLAY_NAME,
       version: APP_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       hostProtocolVersion: hostVersion?.protocolVersion,

@@ -1,7 +1,10 @@
 export const PROTOCOL_VERSION = 11 as const;
 export const SCHEMA_VERSION = 16 as const;
 export const APP_ID = "net.aiuo.pi-desktop";
-export const APP_NAME = "PI-Desktop";
+// 系统侧标识名：系统菜单标签、窗口标题、托盘提示、崩溃上报。
+export const APP_NAME = "xyb-pi";
+// 面向用户的完整产品名：设置 → 信息、关于面板。
+export const APP_DISPLAY_NAME = "小胰宝Pi智能助手";
 export const APP_VERSION = "0.15.10";
 
 export const APP_MENU_COMMANDS = [

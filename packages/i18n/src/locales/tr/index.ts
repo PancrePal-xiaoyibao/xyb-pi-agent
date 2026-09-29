@@ -101,7 +101,7 @@ export const tr = {
     zoomOut: "Uzaklaştır",
     toggleFullScreen: "Tam ekranı aç/kapat",
     toggleDevTools: "Geliştirici araçları",
-    appHelp: "PI-Desktop yardımı",
+    appHelp: "xyb-pi yardımı",
     openLogs: "Günlükleri aç",
     checkForUpdates: "Güncellemeleri denetle…",
   },

@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="PI-Desktop" width="108" />
+<img src="docs/image/readme/logo.png" alt="小胰宝" width="108" />
 
-# PI-Desktop
+# 小胰宝
 
-### A modular desktop workspace for AI agents
+### 面向肿瘤患者及家属的本地优先 AI 桌面工作台
 
-**Bring projects, agents, models, plugins, and workflows into one persistent desktop environment.**
+**把病例资料、AI 助手、用药/报告/康复流程，装进一个长期可用的桌面环境。**
 
-Local-first · Model-agnostic · Plugin-powered · macOS / Windows / Linux
+本地优先 · 模型自由 · 插件驱动 · macOS / Windows / Linux
 
 <br />
 

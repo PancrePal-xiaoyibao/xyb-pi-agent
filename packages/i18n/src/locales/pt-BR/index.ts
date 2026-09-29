@@ -91,7 +91,7 @@ export const ptBR = {
     zoomOut: "Diminuir zoom",
     toggleFullScreen: "Alternar tela cheia",
     toggleDevTools: "Ferramentas de desenvolvedor",
-    appHelp: "Ajuda do PI-Desktop",
+    appHelp: "Ajuda do xyb-pi",
     openLogs: "Abrir logs",
     checkForUpdates: "Verificar atualizações…"
   },

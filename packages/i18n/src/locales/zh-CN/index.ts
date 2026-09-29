@@ -94,7 +94,7 @@ export const zhCN = {
     zoomOut: "缩小",
     toggleFullScreen: "切换全屏",
     toggleDevTools: "开发者工具",
-    appHelp: "PI-Desktop 帮助",
+    appHelp: "xyb-pi 帮助",
     openLogs: "打开日志",
     checkForUpdates: "检查更新…",
   },
