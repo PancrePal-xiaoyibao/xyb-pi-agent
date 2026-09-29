@@ -30,7 +30,8 @@
       "skills/nutrition.md",
       "skills/psych-support.md",
       "skills/complications.md",
-      "skills/pathology.md"
+      "skills/pathology.md",
+      "skills/mdt-round.md"
     ]
   },
   "permissions": ["ui.view", "agent.prompt.inject"],
