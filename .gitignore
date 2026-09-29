@@ -65,3 +65,6 @@ worktrees
 # 小胰宝本地素材工作区：品牌图源、视频抽帧、mascot 中间产物（体积大，可不入库）
 # 产物已固化在 apps/desktop/src/assets/ 与 apps/desktop/build/，需要重做时跑 scripts/xyb-mascot-*.py
 .logo-src/
+# Python 字节码缓存（scripts/ 下的本 fork 工具会在运行时生成）
+__pycache__/
+*.pyc

@@ -1,0 +1,142 @@
+name: XYB fork guards
+
+# 小胰宝 fork 自有的检查，与上游 CI 分开成一个文件（纯新增，永不与上游冲突）。
+#
+# 两件事：
+#   1. guards   —— 每次改动都跑：品牌资产 / 品牌文案 / 插件清单 是否被弄坏。
+#                  上游每次同步都可能在 i18n 与图标路径上覆盖我们的定制，
+#                  靠人眼是看不住的（已实际发生过：de/es/fr 三个语言的
+#                  帮助菜单被静默漏掉）。
+#   2. upstream —— 每周巡检上游是否有新提交，有就开/更新一个 issue，
+#                  并顺带给出「能否干净合并」与「冲突文件」预判。
+#
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # 每周一 09:00（北京时间）＝ 01:00 UTC
+    - cron: '0 1 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    name: 品牌与插件门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # 零依赖校验器：必需字段、权限名、图标 token、MCP 规则、虚假声明
+      - name: 插件清单校验
+        run: node scripts/xyb-check-plugins.mjs
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: 安装 Pillow（品牌资产体检需要）
+        run: python3 -m pip install --quiet pillow
+
+      # 上游唯一的高频冲突面：i18n 文案里的品牌词
+      - name: 品牌文案门禁（i18n 帮助菜单）
+        run: python3 scripts/xyb-apply-brand-strings.py --check
+
+      # 品牌二进制资产是否被上游覆盖
+      - name: 品牌资产体检
+        run: python3 scripts/xyb-restore-brand.py --check
+
+  upstream:
+    name: 上游巡检
+    # 只在定时与手动触发时跑，避免每次 push 都去拉上游
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # 需要完整历史才能算偏离与合并基点
+
+      - name: 添加 upstream 远端并拉取
+        run: |
+          git remote add upstream https://github.com/vastsa/PI-Desktop.git 2>/dev/null \
+            || git remote set-url upstream https://github.com/vastsa/PI-Desktop.git
+          git fetch upstream main --tags
+
+      - name: 计算偏离与冲突预判
+        id: report
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          AHEAD=$(git rev-list --count upstream/main..HEAD)
+          BASE=$(git merge-base HEAD upstream/main)
+
+          {
+            echo "behind=${BEHIND}"
+            echo "ahead=${AHEAD}"
+            echo "## 上游巡检报告"
+            echo
+            echo "- 上游待并入提交：**${BEHIND}** 个"
+            echo "- 本 fork 提交数：**${AHEAD}** 个"
+            echo "- 合并基点：\`$(git log -1 --format='%h %ad' --date=short "${BASE}")\`"
+            echo
+          } > body.md
+
+          if [ "${BEHIND}" = "0" ]; then
+            echo 'status=up-to-date' >> "$GITHUB_OUTPUT"
+            echo "已是最新，无需合并。" >> body.md
+          else
+            echo 'status=behind' >> "$GITHUB_OUTPUT"
+            echo "### 上游新提交（最多 15 条）" >> body.md
+            echo '```' >> body.md
+            git log --format='%h  %ad  %s' --date=format:'%m-%d' "HEAD..upstream/main" | head -15 >> body.md
+            echo '```' >> body.md
+            echo >> body.md
+
+            # 冲突预演（不落工作区）
+            if git merge-tree --write-tree --name-only HEAD upstream/main > /tmp/mt.out 2>&1; then
+              echo "### 合并预判" >> body.md
+              echo "✅ 可干净合并，无冲突。" >> body.md
+            else
+              echo "### 合并预判" >> body.md
+              echo "⚠️ 预测冲突文件：" >> body.md
+              echo '```' >> body.md
+              tail -n +2 /tmp/mt.out >> body.md
+              echo '```' >> body.md
+            fi
+          fi
+
+          echo >> body.md
+          echo "---" >> body.md
+          echo "本地同步：\`bash scripts/xyb-sync-upstream.sh\`（先体检）→ \`--merge\`。" >> body.md
+
+      - name: 开或更新巡检 issue
+        if: steps.report.outputs.status == 'behind'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="上游有新提交待并入"
+          EXISTING=$(gh issue list --state open --search "${TITLE} in:title" \
+            --json number --jq '.[0].number // empty')
+
+          {
+            echo "本轮巡检（$(date -u '+%Y-%m-%d %H:%M UTC')）"
+            echo
+            cat body.md
+          } > comment.md
+
+          if [ -n "${EXISTING}" ]; then
+            gh issue comment "${EXISTING}" --body-file comment.md
+            echo "已更新 issue #${EXISTING}"
+          else
+            gh issue create --title "${TITLE}" --body-file comment.md
+          fi
