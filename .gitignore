@@ -61,3 +61,7 @@ electron.vite.config.*.mjs
 
 .playwright-cli
 worktrees
+
+# 小胰宝本地素材工作区：品牌图源、视频抽帧、mascot 中间产物（体积大，可不入库）
+# 产物已固化在 apps/desktop/src/assets/ 与 apps/desktop/build/，需要重做时跑 scripts/xyb-mascot-*.py
+.logo-src/
