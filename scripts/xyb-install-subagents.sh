@@ -130,7 +130,8 @@ echo
 echo "接下来："
 echo "  1. 新开一个会话（或重启应用）才会加载这些定义"
 echo "  2. 到「设置 → 子智能体」确认它们已出现，并按需开关"
-echo "  3. 患者版建议顺手关掉内置的 5 个软件工程角色"
+echo "  3. 患者版还要默认关掉内置的 5 个软件工程角色，跑："
+echo "     node scripts/xyb-disable-engineering-subagents.mjs"
 echo "     （探索者 / 代码审查员 / 测试执行者 / 修复者 / UI 设计师）"
 echo
 echo "卸载：bash scripts/xyb-install-subagents.sh --uninstall"
