@@ -43,18 +43,12 @@
         "title": "检索 ClinicalTrials.gov",
         "type": "boolean",
         "default": true
-      },
-      {
-        "key": "sourceChiCTR",
-        "title": "检索 ChiCTR（中国临床试验注册中心）",
-        "type": "boolean",
-        "default": true
       }
     ]
   },
   "permissions": ["ui.view", "agent.tool.register", "agent.prompt.inject", "net.fetch"],
   "net": {
-    "domains": ["clinicaltrials.gov", "www.chictr.org.cn", "chinadrugtrials.org.cn"]
+    "domains": ["clinicaltrials.gov"]
   },
   "engines": {
     "piDesktop": ">=0.1.0"

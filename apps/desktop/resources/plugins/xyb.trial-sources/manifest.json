@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.trial-sources",
+  "name": "中国与区域试验来源",
+  "version": "0.1.0",
+  "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）与 Veeva CTV。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "sources",
+        "title": { "en": "Trial Sources", "zh-CN": "试验来源" },
+        "icon": "server",
+        "entry": "views/sources.html",
+        "order": 21
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.trial-sources.list",
+        "title": "小胰宝：看看有哪些试验来源",
+        "keywords": ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台"]
+      }
+    ],
+    "skills": ["skills/china-trials.md"],
+    "mcpServers": [
+      {
+        "id": "chictr",
+        "label": "ChiCTR 中国临床试验注册中心",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "chictr-mcp-server@2.0.2"]
+      },
+      {
+        "id": "veeva-ctv",
+        "label": "Veeva CTV（本地索引）",
+        "transport": "stdio",
+        "command": "ctv-mcp-server"
+      }
+    ]
+  },
+  "permissions": ["ui.view", "agent.prompt.inject", "mcp.server.local"],
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.trial-sources.list"]
+}

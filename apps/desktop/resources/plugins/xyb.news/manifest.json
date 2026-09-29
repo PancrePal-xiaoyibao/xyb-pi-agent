@@ -21,19 +21,11 @@
         "title": "小胰宝：刷新进展",
         "keywords": ["进展", "资讯", "新药", "研究", "news"]
       }
-    ],
-    "settings": [
-      {
-        "key": "cacheHours",
-        "title": "缓存时长（小时）",
-        "type": "number",
-        "default": 12
-      }
     ]
   },
   "permissions": ["ui.view", "net.fetch"],
   "net": {
-    "domains": ["eutils.ncbi.nlm.nih.gov", "clinicaltrials.gov"]
+    "domains": ["eutils.ncbi.nlm.nih.gov"]
   },
   "engines": {
     "piDesktop": ">=0.1.0"

@@ -110,7 +110,7 @@ apps/desktop/resources/plugins/
 
 | # | 事项 | 说明 |
 |---|---|---|
-| 1 | **CTV / Veeva 的 MCP 绑定** | 本地 `~/Downloads/ctv-mcp-server` 已具备六大能力，可注册为插件的 `contributes.mcpServers`。需要确认启动命令与是否需要凭证 |
+| 1 | ~~**CTV / Veeva 的 MCP 绑定**~~ | **已完成** → 见 `XYB-TRIAL-SOURCES.md`。新增插件 `xyb.trial-sources`，声明 `chictr` 与 `veeva-ctv` 两个 MCP 服务，实测均握手成功（9 / 12 工具）。因 `mcp.server.local` 属高风险权限，**单独成插件**而非并进 `xyb.trials`。中国药物登记平台（需本人 Cookie）与推送订阅系统（12+ 组密钥）**不接入客户端** |
 | 2 | **小铃铛 / 小肺宝跨社区** | 淋巴瘤与肺癌素材已在手，可复制同一套结构另建插件；取决于是否同一 App 承载多社区 |
 | 3 | **社群渠道引导** | 源提示词里有 `pro.xiaoyibao.com.cn` 与公众号引导，属运营信息，是否保留需你定 |
-| 4 | **今日心语 / 箴言池** | 源材料含圣经、佛学、名人名言混合语料。信仰相关内容进通用技能是否合适，需你判断 |
+| 4 | **今日心语 / 箴言池** | 源材料含圣经、佛学、名人名言混合语料。已按「用户明确表达信仰背景时才引用，默认只用非宗教鼓励语」写进 `psych-support.md`；配套的 `includePastoral` 开关因技能规则已覆盖而**删除**（避免出现拨了没反应的假开关） |

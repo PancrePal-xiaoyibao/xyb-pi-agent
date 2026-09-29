@@ -12,6 +12,10 @@
  *   3. views[].icon 是否为宿主支持的固定 token
  *   4. 声明的入口文件是否真实存在（main / views.entry / skills）
  *   5. 目录名与 manifest.id 是否一致（内置插件按目录识别）
+ *   6. 模块格式：插件目录必须有 package.json {"type":"commonjs"}
+ *   7. MCP 服务：id/transport/command/url/env/headers 规则，以及
+ *      远端 MCP 域名必须列入 net.domains、stdio/http 与 mcp.server.local/remote 权限互相匹配
+ *   8. 虚假声明：settings 里声明了却没有任何文件引用的键
  *
  * 用法：
  *   node scripts/xyb-check-plugins.mjs                       # 检查全部 xyb.* 插件
@@ -124,6 +128,167 @@ function checkPlugin(dir) {
   if ((m.permissions || []).includes("net.fetch")) {
     const domains = (m.net && m.net.domains) || [];
     if (!domains.length) errors.push("声明了 net.fetch 但没有 manifest.net.domains 白名单（会访问不到任何域名）");
+  }
+
+  // ── MCP 服务（docs/plugin-development.md §6.9）──
+  // 规则与 packages/plugin-sdk/src/mcp-config.ts 的 validateMcpServer 对齐。
+  const MCP_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+  const MCP_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  const MCP_HEADER_KEY = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+  const BARE_COMMAND = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+  const servers = (m.contributes && m.contributes.mcpServers) || [];
+  const seenIds = new Set();
+  let hasStdio = false;
+  let hasHttp = false;
+
+  const checkRefs = (record, keyRe, label) => {
+    if (record === undefined) return;
+    if (typeof record !== "object" || record === null || Array.isArray(record)) {
+      errors.push(`${label} 必须是对象`);
+      return;
+    }
+    for (const [k, v] of Object.entries(record)) {
+      if (!keyRe.test(k)) errors.push(`${label} 的键名 "${k}" 不合法`);
+      const okValue =
+        typeof v === "string" ||
+        (v && typeof v === "object" && typeof v.setting === "string" && v.setting.length > 0);
+      if (!okValue) errors.push(`${label}.${k} 必须是字符串或 { setting: "<key>" }`);
+    }
+  };
+
+  for (const s of servers) {
+    if (!s || typeof s !== "object") {
+      errors.push("mcpServers 条目必须是对象");
+      continue;
+    }
+    const sid = s.id;
+    if (typeof sid !== "string" || !MCP_ID.test(sid)) {
+      errors.push(`mcpServer id "${sid}" 不合法（需匹配 [a-zA-Z][a-zA-Z0-9_-]{0,63}）`);
+      continue;
+    }
+    if (seenIds.has(sid)) errors.push(`mcpServer id "${sid}" 重复`);
+    seenIds.add(sid);
+
+    if (s.transport !== "stdio" && s.transport !== "http") {
+      errors.push(`mcpServer "${sid}" 的 transport 必须是 "stdio" 或 "http"`);
+      continue;
+    }
+
+    if (s.transport === "stdio") {
+      hasStdio = true;
+      if (s.url !== undefined || s.headers !== undefined) {
+        errors.push(`mcpServer "${sid}" 是 stdio，不得设置 url / headers`);
+      }
+      if (typeof s.command !== "string" || !s.command.trim()) {
+        errors.push(`mcpServer "${sid}" 缺少 command`);
+      } else {
+        const cmd = s.command.trim();
+        // 绝对路径会被宿主拒绝 —— 这是最容易静默失效的一类
+        if (/^[a-zA-Z]:[\\/]/.test(cmd) || cmd.startsWith("/") || cmd.startsWith("\\")) {
+          errors.push(`mcpServer "${sid}" 的 command 不能是绝对路径（宿主只接受 PATH 裸命令或插件内相对可执行文件）`);
+        } else if (cmd.split(/[\\/]/).includes("..")) {
+          errors.push(`mcpServer "${sid}" 的 command 不能包含 ".."`);
+        } else if (!/[\\/]/.test(cmd) && !BARE_COMMAND.test(cmd)) {
+          errors.push(`mcpServer "${sid}" 的 command "${cmd}" 不是合法的可执行文件名`);
+        } else if (/[\\/]/.test(cmd) && !existsSync(join(dir, cmd))) {
+          // 插件内相对可执行文件必须真实存在，否则启动即失败
+          errors.push(`mcpServer "${sid}" 声明了插件内命令 ${cmd}，但该文件不存在`);
+        }
+      }
+      if (s.args !== undefined && (!Array.isArray(s.args) || s.args.some((a) => typeof a !== "string"))) {
+        errors.push(`mcpServer "${sid}" 的 args 必须是字符串数组`);
+      }
+      checkRefs(s.env, MCP_ENV_KEY, `mcpServer "${sid}" env`);
+    } else {
+      hasHttp = true;
+      if (s.command !== undefined || s.args !== undefined || s.env !== undefined) {
+        errors.push(`mcpServer "${sid}" 是 http，不得设置 command / args / env`);
+      }
+      let host = null;
+      if (typeof s.url !== "string" || !s.url.trim()) {
+        errors.push(`mcpServer "${sid}" 缺少 url`);
+      } else {
+        try {
+          const u = new URL(s.url);
+          if (u.protocol !== "http:" && u.protocol !== "https:") {
+            errors.push(`mcpServer "${sid}" 的 url 必须是 http/https`);
+          } else {
+            host = u.hostname;
+            if (u.protocol === "http:" && !/^(localhost|127\.|\[?::1\]?)/.test(host)) {
+              warnings.push(`mcpServer "${sid}" 使用非回环 http，请求不加密`);
+            }
+          }
+        } catch {
+          errors.push(`mcpServer "${sid}" 的 url 不是合法绝对地址`);
+        }
+      }
+      // 远端 MCP 端点同样受 net.domains 约束，漏配会静默连不上
+      if (host) {
+        const domains = (m.net && m.net.domains) || [];
+        const allowed = domains.some((d) => host === d || host.endsWith("." + d));
+        if (!allowed) {
+          errors.push(`mcpServer "${sid}" 的域名 ${host} 未列入 manifest.net.domains（远端 MCP 也受出网白名单约束）`);
+        }
+      }
+      checkRefs(s.headers, MCP_HEADER_KEY, `mcpServer "${sid}" headers`);
+    }
+  }
+
+  // 权限与 MCP 声明要互相匹配：两侧任一为空都是「声明了却不生效」
+  const perms = m.permissions || [];
+  if (hasStdio && !perms.includes("mcp.server.local")) {
+    errors.push("声明了 stdio 型 mcpServer，但 permissions 缺少 mcp.server.local");
+  }
+  if (hasHttp && !perms.includes("mcp.server.remote")) {
+    errors.push("声明了 http 型 mcpServer，但 permissions 缺少 mcp.server.remote");
+  }
+  if (perms.includes("mcp.server.local") && !hasStdio) {
+    warnings.push("声明了 mcp.server.local 但没有 stdio 型 mcpServer");
+  }
+  if (perms.includes("mcp.server.remote") && !hasHttp) {
+    warnings.push("声明了 mcp.server.remote 但没有 http 型 mcpServer");
+  }
+
+  // ── 虚假声明：settings 声明了却没有代码引用 ──
+  // 这类问题患者侧表现为「开关拨了没反应」，且不会有任何报错。
+  const settings = (m.contributes && m.contributes.settings) || [];
+  if (settings.length) {
+    let corpus = "";
+    const collect = (p) => {
+      try {
+        corpus += readFileSync(p, "utf8");
+      } catch {
+        /* 读不到就跳过 */
+      }
+    };
+    for (const f of need) collect(join(dir, f));
+    for (const sub of ["main.js", "index.js", "plugin.js"]) collect(join(dir, sub));
+    const walk = (d) => {
+      let entries = [];
+      try {
+        entries = readdirSync(d, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules" && !e.name.startsWith(".")) walk(p);
+        } else if (/\.(js|mjs|cjs|html|md)$/.test(e.name)) {
+          collect(p);
+        }
+      }
+    };
+    walk(dir);
+    for (const s of settings) {
+      if (!s || typeof s.key !== "string") {
+        warnings.push("settings 条目缺少 key");
+        continue;
+      }
+      if (!corpus.includes(s.key)) {
+        warnings.push(`setting "${s.key}" 声明了但没有任何文件引用它（患者拨了这个开关不会有任何反应）`);
+      }
+    }
   }
 
   return { dir, id: m.id, errors, warnings };

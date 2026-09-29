@@ -31,24 +31,6 @@
       "skills/psych-support.md",
       "skills/complications.md",
       "skills/pathology.md"
-    ],
-    "settings": [
-      {
-        "key": "diseaseFocus",
-        "title": "默认病种语境",
-        "type": "select",
-        "default": "pancreatic",
-        "enum": [
-          { "value": "pancreatic", "label": "胰腺癌（小胰宝）" },
-          { "value": "generic", "label": "通用（不预设病种）" }
-        ]
-      },
-      {
-        "key": "includePastoral",
-        "title": "今日心语包含信仰类箴言",
-        "type": "boolean",
-        "default": false
-      }
     ]
   },
   "permissions": ["ui.view", "agent.prompt.inject"],
