@@ -237,8 +237,11 @@ jobs:
             echo "::error::Add them under Settings → Secrets and variables → Actions. See docs/spec/06-delivery/06-release-runbook.md."
             exit 1
           fi
-          if [[ "${APPLE_TEAM_ID}" != "DUV63RKYTW" ]]; then
-            echo "::error::APPLE_TEAM_ID must be DUV63RKYTW (XingYu Liu Developer ID team)."
+          # Shape check, not an equality check against one team id: upstream
+          # pinned DUV63RKYTW here, which made every fork's release lane fail.
+          # Ten alphanumerics still catches pasting a password or an email in.
+          if [[ ! "${APPLE_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::APPLE_TEAM_ID must be 10 alphanumeric characters. Find it at developer.apple.com/account → Membership details."
             exit 1
           fi
 
@@ -248,9 +251,12 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           # electron-builder rejects the "Developer ID Application:" prefix on
-          # identity names and resolves the certificate itself, so CSC_NAME
-          # carries the bare common name only.
-          CSC_NAME: "XingYu Liu (DUV63RKYTW)"
+          # identity names, so CSC_NAME carries the bare common name only.
+          # Upstream hardcoded its own identity here; a fork sets the
+          # repository *variable* CSC_NAME instead (e.g. "Your Name (ABCDE12345)").
+          # Leave it empty to let electron-builder auto-detect: the imported
+          # keychain holds exactly one Developer ID certificate.
+          CSC_NAME: ${{ vars.CSC_NAME }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

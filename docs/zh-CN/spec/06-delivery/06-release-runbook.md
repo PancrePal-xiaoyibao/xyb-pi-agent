@@ -43,10 +43,16 @@ Windows 可执行文件和原生窗口图标中使用 `build/icon.ico`。渲染�
 
 ## 2. 先决条件（发布通道）
 
-1. Apple 开发者帐户，登录钥匙串中具有 **Developer ID Application** 证书。正式证书为 `Developer ID Application: XingYu Liu (DUV63RKYTW)`（Team ID `DUV63RKYTW`）。
-2. 本地签名通道的环境变量：
-   - `MAC_SIGNING_IDENTITY` — 裸通用名 `XingYu Liu (DUV63RKYTW)`；electron-builder 拒绝保留 `Developer ID Application:` 前缀的名称，脚本会自动去掉该前缀
-   - `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` — 公证所必需（`APPLE_TEAM_ID` 必须为 `DUV63RKYTW`）
+1. **Apple Developer Program 会员资格**，以及登录钥匙串中的 **Developer ID Application** 证书。免费的 Apple ID 不够用：Apple 会拒绝未入会团队提交的公证（`Personal Team is not enrolled in the Apple Developer Program`）。个人会员 ¥688/年，不需要 D-U-N-S 编号，通常约 48 小时内通过。上游在这里固定了某一张证书，fork 必须指向自己的——从钥匙串里读：
+
+   ```bash
+   security find-identity -v -p codesigning
+   # Developer ID Application: 你的名字 (ABCDE12345)
+   ```
+
+2. 本地签名通道的环境变量（**全部必填** —— 脚本已不再回退到写死的身份）：
+   - `MAC_SIGNING_IDENTITY` — 裸通用名（`你的名字 (ABCDE12345)`）；electron-builder 拒绝保留 `Developer ID Application:` 前缀的名称，脚本会自动去掉该前缀
+   - `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` — 公证所必需；`APPLE_TEAM_ID` 是你自己的 10 位团队 ID，见 developer.apple.com/account → Membership details
 3. 安装 Rust 工具链和 pnpm 工作区。Rust 必须在 macOS 本机运行器上运行：
    Apple Silicon 使用 arm64，Intel 使用 x86_64。
 
@@ -158,7 +164,7 @@ Windows 可执行文件和原生窗口图标中使用 `build/icon.ico`。渲染�
 ### 4.2 构建/打包
 
 ```bash
-export MAC_SIGNING_IDENTITY="XingYu Liu (DUV63RKYTW)"
+export MAC_SIGNING_IDENTITY="你的名字 (ABCDE12345)"
 export APPLE_ID=...
 export APPLE_APP_SPECIFIC_PASSWORD=...
 export APPLE_TEAM_ID=...
@@ -211,7 +217,7 @@ macOS ZIP 在安装包根目录包含 `PI-Desktop.app`。DMG 和 ZIP 都不附�
 启动命令助手，本地与未签名调试构建也一样。标签发布工件仍会签名并公证；未签名通道
 仅用于调试，不代表已通过 Gatekeeper 验证。
 
-标签构建和 `sign_macos: true`（手动运行的默认值）仅从 GitHub Actions 密钥接收 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`，通过 `CSC_NAME=XingYu Liu (DUV63RKYTW)`（裸通用名——electron-builder 拒绝 `Developer ID Application:` 前缀）固定证书，强制代码签名与 `notarytool` 公证 `PI-Desktop.app`。随后 DMG 会由 `scripts/notarize-and-staple-macos-release-dmg.sh` 单独提交到同一个服务，只有返回 `Accepted` 才允许装订票据。之后验证身份、代码签名完整性（含 `pi-desktop-host-core`）、Gatekeeper `Notarized Developer ID` 以及两份已装订票据，再进行任何工件上传。
+标签构建和 `sign_macos: true`（手动运行的默认值）仅从 GitHub Actions 密钥接收 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`，通过 `CSC_NAME=<你的裸通用名>`（取自仓库变量——electron-builder 拒绝 `Developer ID Application:` 前缀）固定证书，强制代码签名与 `notarytool` 公证 `PI-Desktop.app`。随后 DMG 会由 `scripts/notarize-and-staple-macos-release-dmg.sh` 单独提交到同一个服务，只有返回 `Accepted` 才允许装订票据。之后验证身份、代码签名完整性（含 `pi-desktop-host-core`）、Gatekeeper `Notarized Developer ID` 以及两份已装订票据，再进行任何工件上传。
 
 DMG、ZIP、NSIS、AppImage、deb、rpm、块图和更新程序提要输出已
 压缩或压缩不敏感。因此，工作流程会上传它们的
@@ -247,9 +253,9 @@ Actions 中创建下列密钥。不要把 p12、密码、Apple ID 或应用专�
 |---|---|
 | `CSC_LINK` | 导出的 Developer ID Application `.p12`（证书+私钥）的 Base64。electron-builder 也接受文件路径，但 CI 使用 Secret 正文。 |
 | `CSC_KEY_PASSWORD` | 导出该 `.p12` 时设置的密码 |
-| `APPLE_ID` | 属于团队 `DUV63RKYTW` 的 Apple ID 邮箱 |
+| `APPLE_ID` | 已加入你自己的 Apple 开发者团队的 Apple ID 邮箱 |
 | `APPLE_APP_SPECIFIC_PASSWORD` | 来自 https://appleid.apple.com → Sign-In and Security → App-Specific Passwords 的应用专用密码 |
-| `APPLE_TEAM_ID` | `DUV63RKYTW` |
+| `APPLE_TEAM_ID` | 你自己的 10 位团队 ID（Membership details） |
 
 在本地把 p12 编成 base64（不要把输出贴到聊天或仓库）：
 

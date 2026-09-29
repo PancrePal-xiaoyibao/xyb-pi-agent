@@ -4,13 +4,25 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE_DIR="${1:-apps/desktop/release}"
-PRODUCT_NAME="PI-Desktop"
-# Accepts either the bare common name ("XingYu Liu (DUV63RKYTW)") or the full
-# certificate label ("Developer ID Application: XingYu Liu (DUV63RKYTW)").
-IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-XingYu Liu (DUV63RKYTW)}"
+
+# Read the packaged app name from the build config instead of hardcoding it.
+# This script used to pin "PI-Desktop", which silently stopped matching once the
+# app was rebranded — the gate then failed with "expected exactly one
+# PI-Desktop.app" on a perfectly good package.
+PRODUCT_NAME="$(node -p "require('${REPO_ROOT}/apps/desktop/package.json').build.productName" 2>/dev/null || true)"
+if [[ -z "$PRODUCT_NAME" ]]; then
+  echo "error: could not read build.productName from apps/desktop/package.json." >&2
+  exit 1
+fi
+
+# Optional. When set, the signature must match it. When unset, the checks below
+# run against whatever Developer ID authority actually signed the bundle, so a
+# fork does not have to configure a name to get a meaningful gate. Upstream
+# hardcoded its own identity here.
+IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-}"
 IDENTITY_NAME="${IDENTITY_NAME#Developer ID Application: }"
-EXPECTED_IDENTITY="Developer ID Application: ${IDENTITY_NAME}"
 
 if [[ ! -d "$RELEASE_DIR" ]]; then
   echo "error: release directory does not exist: $RELEASE_DIR" >&2
@@ -38,9 +50,22 @@ HOST_CORE="$APP/Contents/Resources/bin/pi-desktop-host-core"
 echo "==> Inspecting Developer ID signature: $APP"
 SIGNATURE_INFO="$(codesign -dv --verbose=4 "$APP" 2>&1)"
 printf '%s\n' "$SIGNATURE_INFO"
-if [[ "$SIGNATURE_INFO" != *"Authority=${EXPECTED_IDENTITY}"* ]]; then
-  echo "error: $APP is not signed with $EXPECTED_IDENTITY." >&2
+
+ACTUAL_IDENTITY="$(printf '%s\n' "$SIGNATURE_INFO" | sed -n 's/^Authority=//p' | head -n 1)"
+if [[ "$ACTUAL_IDENTITY" != "Developer ID Application: "* ]]; then
+  echo "error: $APP is not signed with a Developer ID Application certificate (got: ${ACTUAL_IDENTITY:-no Authority line})." >&2
   exit 1
+fi
+
+if [[ -n "$IDENTITY_NAME" ]]; then
+  EXPECTED_IDENTITY="Developer ID Application: ${IDENTITY_NAME}"
+  if [[ "$SIGNATURE_INFO" != *"Authority=${EXPECTED_IDENTITY}"* ]]; then
+    echo "error: $APP is not signed with $EXPECTED_IDENTITY (got: $ACTUAL_IDENTITY)." >&2
+    exit 1
+  fi
+  echo "==> Signature matches MAC_SIGNING_IDENTITY: $EXPECTED_IDENTITY"
+else
+  echo "==> MAC_SIGNING_IDENTITY not set; accepting the bundle's own Developer ID authority: $ACTUAL_IDENTITY"
 fi
 if [[ "$SIGNATURE_INFO" != *"flags=0x10000(runtime)"* && "$SIGNATURE_INFO" != *"flags=runtime"* && "$SIGNATURE_INFO" != *"runtime"* ]]; then
   echo "warning: hardened runtime flag not found in codesign -dv output; continuing with --deep --strict."

@@ -45,15 +45,27 @@ when macOS `iconutil` is available, without overwriting the canonical source.
 
 ## 2. Prerequisites (release lane)
 
-1. Apple Developer account with a **Developer ID Application** certificate in
-   the login keychain. Official certificate:
-   `Developer ID Application: XingYu Liu (DUV63RKYTW)` (Team ID `DUV63RKYTW`).
-2. Environment variables for the local signed lane:
-   - `MAC_SIGNING_IDENTITY` — bare common name `XingYu Liu (DUV63RKYTW)`;
+1. **Apple Developer Program membership** and a **Developer ID Application**
+   certificate in the login keychain. A free Apple ID is not enough: Apple
+   refuses notarization for an unenrolled team
+   (`Personal Team is not enrolled in the Apple Developer Program`).
+   Individual membership is ¥688/year, needs no D-U-N-S number, and is
+   normally approved within about 48 hours. Upstream pinned one certificate
+   here; a fork must point at its own — read it from the keychain:
+
+   ```bash
+   security find-identity -v -p codesigning
+   # Developer ID Application: Your Name (ABCDE12345)
+   ```
+
+2. Environment variables for the local signed lane (all **required** — the
+   scripts no longer fall back to a hardcoded identity):
+   - `MAC_SIGNING_IDENTITY` — bare common name (`Your Name (ABCDE12345)`);
      electron-builder rejects a name that keeps the
      `Developer ID Application:` prefix, so the script strips it
    - `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` — required for
-     notarization (`APPLE_TEAM_ID` must be `DUV63RKYTW`)
+     notarization; `APPLE_TEAM_ID` is your own 10-character team id from
+     developer.apple.com/account → Membership details
 3. Rust toolchain and pnpm workspace installed. The Rust toolchain must run on
    the native macOS runner: arm64 for Apple Silicon or x86_64 for Intel.
 
@@ -184,7 +196,7 @@ Pre-tag checklist:
 ### 4.2 Build / package
 
 ```bash
-export MAC_SIGNING_IDENTITY="XingYu Liu (DUV63RKYTW)"
+export MAC_SIGNING_IDENTITY="Your Name (ABCDE12345)"
 export APPLE_ID=...
 export APPLE_APP_SPECIFIC_PASSWORD=...
 export APPLE_TEAM_ID=...
@@ -227,7 +239,7 @@ electron-builder, and builds `pi-desktop-host-core` on that same native
 runner. Tag builds and `sign_macos: true` (the dispatch default) receive
 `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
 `APPLE_TEAM_ID` only from GitHub Actions secrets, pin the certificate through
-`CSC_NAME=XingYu Liu (DUV63RKYTW)` (bare common name — electron-builder rejects
+`CSC_NAME=<your bare common name>` (from the repository variable — electron-builder rejects
 the `Developer ID Application:` prefix), force code signing and
 `notarytool` notarization of `PI-Desktop.app`. The DMG is then submitted to the
 same service on its own (`scripts/notarize-and-staple-macos-release-dmg.sh`),
@@ -299,17 +311,21 @@ electron-updater feeds.
 
 ### 4.6 GitHub Actions secrets for macOS signing
 
-Create these under GitHub → repository `vastsa/PI-Desktop` → Settings →
-Secrets and variables → Actions. Never commit the p12, password, Apple ID, or
+Create these under GitHub → **your** repository (Settings → Secrets and
+variables → Actions). Never commit the p12, password, Apple ID, or
 app-specific password. Never `echo` these values in CI.
+
+Optionally set the repository **variable** `CSC_NAME` to the bare common name
+(`Your Name (ABCDE12345)`) so electron-builder picks the right certificate;
+leave it unset to let it auto-detect from the imported keychain.
 
 | Secret | Value |
 |---|---|
 | `CSC_LINK` | Base64 of the exported Developer ID Application `.p12` (Certificate + Private Key). electron-builder also accepts a file path, but CI uses the secret body. |
 | `CSC_KEY_PASSWORD` | Password used when exporting that `.p12` |
-| `APPLE_ID` | Apple ID email that belongs to team `DUV63RKYTW` |
+| `APPLE_ID` | Apple ID email enrolled in your own Apple Developer team |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from https://appleid.apple.com → Sign-In and Security → App-Specific Passwords |
-| `APPLE_TEAM_ID` | `DUV63RKYTW` |
+| `APPLE_TEAM_ID` | your own 10-character team id (Membership details) |
 
 Encode the p12 locally (do not paste the output into chat or the repo):
 

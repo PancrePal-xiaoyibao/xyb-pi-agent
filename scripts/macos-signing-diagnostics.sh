@@ -14,9 +14,11 @@
 # Usage: scripts/macos-signing-diagnostics.sh [--require-identity]
 #
 # Environment:
-#   MAC_SIGNING_IDENTITY   bare common name ("XingYu Liu (DUV63RKYTW)") or the
-#                          full certificate label
-#                          ("Developer ID Application: XingYu Liu (DUV63RKYTW)").
+#   MAC_SIGNING_IDENTITY   optional — bare common name ("Your Name (ABCDE12345)")
+#                          or the full certificate label
+#                          ("Developer ID Application: Your Name (ABCDE12345)").
+#                          When unset, the script lists whatever Developer ID
+#                          identities the keychain holds instead of matching one.
 #
 # Exit status:
 #   0  snapshot printed. A missing certificate is only a warning by default:
@@ -47,8 +49,10 @@ for arg in "$@"; do
 done
 
 # Accepts either the bare common name or the full certificate label, matching
-# scripts/verify-macos-release.sh.
-IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-XingYu Liu (DUV63RKYTW)}"
+# scripts/verify-macos-release.sh. Left empty when the caller did not name an
+# identity: upstream defaulted to its own, which made every fork's log compare
+# against a stranger's certificate.
+IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-}"
 IDENTITY_NAME="${IDENTITY_NAME#Developer ID Application: }"
 EXPECTED_IDENTITY="Developer ID Application: ${IDENTITY_NAME}"
 
@@ -205,7 +209,10 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "==> Signing identity"
-if [[ -n "$IDENTITY_OUTPUT" && "$IDENTITY_OUTPUT" == *"$EXPECTED_IDENTITY"* ]]; then
+if [[ -z "$IDENTITY_NAME" ]]; then
+  echo "==> MAC_SIGNING_IDENTITY not set; listing Developer ID identities in this keychain."
+  printf '%s\n' "$IDENTITY_OUTPUT" | grep -F 'Developer ID Application:' | head -n 5 || echo "(none found)"
+elif [[ -n "$IDENTITY_OUTPUT" && "$IDENTITY_OUTPUT" == *"$EXPECTED_IDENTITY"* ]]; then
   echo "==> Developer ID identity available: ${EXPECTED_IDENTITY}"
   IDENTITY_LINE="$(printf '%s\n' "$IDENTITY_OUTPUT" | grep -F -- "$EXPECTED_IDENTITY" | head -n 1 || true)"
   echo_redacted "$IDENTITY_LINE"
