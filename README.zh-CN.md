@@ -40,6 +40,57 @@
 
 ---
 
+## 面向肿瘤患者与家属的 Skills
+
+小胰宝内置了一组围绕患者与家属真实需求设计的技能，而不是通用的 Agent 演示。
+
+<table>
+<tr>
+
+<td width="33%" valign="top">
+
+### 我的资料
+
+`xyb.records`
+
+把病理、影像与化验报告归到**本地**文件夹，并整理成一份白话摘要，自己看得懂，也能拿给别人看。
+
+</td>
+
+<td width="33%" valign="top">
+
+### 找试验
+
+`xyb.trials`
+
+按自己的实际情况检索公开临床试验——治疗线数、用过的药、基因标志物——给出登记编号、招募状态和原文链接。
+
+</td>
+
+<td width="33%" valign="top">
+
+### 看进展
+
+`xyb.news`
+
+汇集近期的药物与研究条目。只列标题、来源与日期，每条都能点回原文。
+
+</td>
+
+</tr>
+</table>
+
+这些技能都是**一份纯 Markdown 文档**，由助手按需加载，并可选配右侧工作面板里的界面。你可以直接读、改，或换成自己的。
+
+**这些技能不会越过的边界：**
+
+- **本地优先** —— 资料只存在你自己的电脑上，不建账号、不上云
+- **发送前脱敏** —— 姓名、电话、医院名在进入模型之前就被隐藏
+- **来源可溯** —— 每条试验与进展都带原文链接和获取日期
+- **不做医疗判断** —— 不出诊断、不推荐用药、不做医院或医生排名
+
+---
+
 ## 为什么是 PI-Desktop？
 
 终端 Agent 擅长执行，IDE Agent 擅长嵌入编辑器。
@@ -747,9 +798,9 @@ PI-Desktop 使用 **GNU Lesser General Public License v3.0**。
 
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="PI-Desktop" width="72" />
+<img src="docs/image/readme/logo.png" alt="小胰宝" width="72" />
 
-## PI-Desktop
+## 小胰宝
 
 ### Build your own Agent workspace.
 

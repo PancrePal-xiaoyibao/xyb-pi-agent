@@ -41,6 +41,57 @@
 
 ---
 
+## Skills for cancer patients and families
+
+小胰宝 ships a set of skills built around what patients and families actually need — not generic agent demos.
+
+<table>
+<tr>
+
+<td width="33%" valign="top">
+
+### My Records
+
+`xyb.records`
+
+Collect pathology, imaging and lab reports into a **local** folder, and turn them into a plain-language summary you can read yourself or hand to someone else.
+
+</td>
+
+<td width="33%" valign="top">
+
+### Find Trials
+
+`xyb.trials`
+
+Search public clinical trials against your own situation — treatment line, drugs already used, biomarkers — and get back the registry ID, recruitment status and a link to the original record.
+
+</td>
+
+<td width="33%" valign="top">
+
+### Track Progress
+
+`xyb.news`
+
+Gather recent drug and research entries. Title, source and date only; every item links back to the original.
+
+</td>
+
+</tr>
+</table>
+
+Each of these is a **skill**: a plain Markdown document the agent loads on demand, paired with an optional view in the right-hand work panel. Read it, edit it, or swap in your own.
+
+**What these skills never do:**
+
+- **Local-first** — records stay on your machine. No account, no cloud.
+- **Redacted before inference** — names, phone numbers and hospital names are masked before anything reaches a model.
+- **Always sourced** — every trial and research item carries a link and a fetch date.
+- **No medical judgement** — no diagnosis, no drug recommendations, no hospital or doctor rankings.
+
+---
+
 ## Why PI-Desktop?
 
 Terminal agents are great at execution. IDE agents are great at living inside an editor.
@@ -743,9 +794,9 @@ See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="PI-Desktop" width="72" />
+<img src="docs/image/readme/logo.png" alt="小胰宝" width="72" />
 
-## PI-Desktop
+## 小胰宝
 
 ### Build your own Agent workspace.
 
