@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.records",
+  "name": "我的资料",
+  "version": "0.1.0",
+  "description": "把散落的检查报告、影像与就诊资料归到本地资料库，并生成患者可读的病情摘要。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "records",
+        "title": { "en": "My Records", "zh-CN": "我的资料" },
+        "icon": "folder",
+        "entry": "views/records.html",
+        "order": 10
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.records.import",
+        "title": "小胰宝：导入资料",
+        "keywords": ["导入", "资料", "病历", "报告", "import"]
+      },
+      {
+        "id": "xyb.records.summary",
+        "title": "小胰宝：生成病情摘要",
+        "keywords": ["摘要", "总结", "summary"]
+      }
+    ],
+    "skills": ["skills/patient-summary.md"],
+    "settings": [
+      {
+        "key": "vaultDir",
+        "title": "资料库位置",
+        "type": "string",
+        "default": ""
+      },
+      {
+        "key": "redactBeforeAi",
+        "title": "发给 AI 前自动隐藏姓名与电话",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  },
+  "permissions": ["ui.view", "fs.read", "fs.write", "agent.prompt.inject"],
+  "fs": {
+    "read": { "root": "userSelected" },
+    "write": { "root": "userSelected" }
+  },
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.records.import", "onCommand:xyb.records.summary"]
+}

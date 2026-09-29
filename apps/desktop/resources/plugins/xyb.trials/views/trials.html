@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>找试验</title>
+    <style>
+      :root {
+        --mint: #299d8c;
+        --ink: #213139;
+        --body: #48565a;
+        --soft: #edf6f3;
+        --line: #dce7e3;
+        --bg: #ffffff;
+        --muted: #8b9a97;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e8f1ee;
+          --body: #b8c7c3;
+          --soft: #1f2928;
+          --line: #2a3735;
+          --bg: #161d1f;
+          --muted: #7d8f8c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(var(--pi-plugin-titlebar-height, 0px) + 16px) 16px 24px;
+        background: var(--bg);
+        color: var(--body);
+        font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+      .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; line-height: 1.7; }
+      .bar { display: flex; gap: 8px; margin-top: 14px; }
+      input[type="text"] {
+        flex: 1; appearance: none; border: 1px solid var(--line); background: var(--bg);
+        color: var(--ink); font: inherit; font-size: 12.5px; padding: 8px 11px; border-radius: 8px;
+      }
+      input[type="text"]:focus { outline: none; border-color: var(--mint); }
+      .btn {
+        appearance: none; border: 1px solid var(--mint); background: var(--mint); color: #fff;
+        font: inherit; font-size: 12.5px; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn[disabled] { opacity: .5; cursor: default; }
+      .disclaimer {
+        margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--mint);
+        background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
+        line-height: 1.7; color: var(--body);
+      }
+      .list { margin-top: 16px; }
+      .card {
+        border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; margin-bottom: 9px;
+      }
+      .card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.5; }
+      .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+      .tag {
+        font-size: 11px; color: var(--mint); border: 1px solid var(--mint);
+        border-radius: 999px; padding: 1px 8px;
+      }
+      .tag.gray { color: var(--muted); border-color: var(--line); }
+      .meta { color: var(--muted); font-size: 11px; line-height: 1.7; }
+      .link { color: var(--mint); font-size: 11.5px; text-decoration: none; }
+      .link:hover { text-decoration: underline; }
+      .empty {
+        border: 1px dashed var(--line); border-radius: 10px; padding: 22px 16px;
+        text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>找试验</h1>
+    <div class="hint">输入病种或关键词，检索公开的临床试验信息。结果只做信息整理，不替你决定参不参加。</div>
+
+    <div class="bar">
+      <input type="text" id="q" placeholder="例如：胰腺癌 KRAS" />
+      <button class="btn" id="go">检索</button>
+    </div>
+
+    <div class="disclaimer">
+      以下为公开试验信息整理，供参考，不构成医疗建议。是否符合入组条件，需由研究医生结合病情判断。
+    </div>
+
+    <div class="list" id="list">
+      <div class="empty">还没有检索结果。输入关键词后点「检索」。</div>
+    </div>
+
+    <script>
+      const bridge = window.pluginBridge;
+
+      const STATUS_ZH = {
+        RECRUITING: "招募中",
+        NOT_YET_RECRUITING: "尚未开始招募",
+        ACTIVE_NOT_RECRUITING: "进行中（暂不招募）",
+        ENROLLING_BY_INVITATION: "邀请入组",
+        COMPLETED: "已完成",
+        SUSPENDED: "已暂停",
+        TERMINATED: "已终止",
+        WITHDRAWN: "已撤回",
+        UNKNOWN: "状态未知",
+      };
+
+      const PHASE_ZH = {
+        EARLY_PHASE1: "早期 I 期",
+        PHASE1: "I 期",
+        PHASE2: "II 期",
+        PHASE3: "III 期",
+        PHASE4: "IV 期",
+        NA: "不适用",
+      };
+
+      function statusLabel(s) {
+        return STATUS_ZH[s] ? STATUS_ZH[s] + "（" + s + "）" : s || "状态未知";
+      }
+
+      function phaseLabel(p) {
+        if (!p) return "";
+        return p
+          .split("/")
+          .map((x) => PHASE_ZH[x.trim()] || x.trim())
+          .join(" / ");
+      }
+
+      function el(tag, cls, text) {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      }
+
+      function render(items, note) {
+        const list = document.getElementById("list");
+        list.textContent = "";
+
+        if (note) {
+          list.appendChild(el("div", "disclaimer", note));
+        }
+
+        if (!items || !items.length) {
+          list.appendChild(el("div", "empty", "没有找到符合条件的公开试验。可以换关键词再试。"));
+          return;
+        }
+        for (const it of items) {
+          const card = el("div", "card");
+          card.appendChild(el("h3", null, it.title || it.id || "未命名试验"));
+
+          const row = el("div", "row");
+          if (it.id) row.appendChild(el("span", "tag", it.id));
+          if (it.status) row.appendChild(el("span", "tag gray", statusLabel(it.status)));
+          const ph = phaseLabel(it.phase);
+          if (ph) row.appendChild(el("span", "tag gray", ph));
+          card.appendChild(row);
+
+          if (it.locations && it.locations.length) {
+            card.appendChild(el("div", "meta", "地点：" + it.locations.join("、")));
+          }
+          card.appendChild(el("div", "meta", "信息更新于 " + (it.fetchedAt || "—")));
+
+          if (it.url) {
+            const a = el("a", "link", "查看原始登记信息");
+            a.href = "#";
+            a.addEventListener("click", (e) => {
+              e.preventDefault();
+              bridge.invoke("shell.openExternal", { url: it.url }).catch(() => {});
+            });
+            card.appendChild(a);
+          }
+          list.appendChild(card);
+        }
+      }
+
+      async function doSearch() {
+        const btn = document.getElementById("go");
+        const q = document.getElementById("q").value.trim();
+        btn.disabled = true;
+        try {
+          const res = await bridge.invoke("xyb.trials.search", { terms: q || undefined });
+          let note = "";
+          if (res && res.dropped) {
+            note = "「" + res.dropped + "」这几个词暂时无法转成检索词，结果里没有包含它们。可以试试写药物名、治疗方式或基因名。";
+          }
+          render(res && res.items, note);
+        } catch (e) {
+          const list = document.getElementById("list");
+          list.textContent = "";
+          list.appendChild(el("div", "empty", "检索失败，请检查网络后在设置里确认数据源已开启。"));
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      document.getElementById("go").addEventListener("click", doSearch);
+      document.getElementById("q").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doSearch();
+      });
+    </script>
+  </body>
+</html>

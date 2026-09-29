@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>看进展</title>
+    <style>
+      :root {
+        --mint: #299d8c;
+        --ink: #213139;
+        --body: #48565a;
+        --soft: #edf6f3;
+        --line: #dce7e3;
+        --bg: #ffffff;
+        --muted: #8b9a97;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e8f1ee;
+          --body: #b8c7c3;
+          --soft: #1f2928;
+          --line: #2a3735;
+          --bg: #161d1f;
+          --muted: #7d8f8c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(var(--pi-plugin-titlebar-height, 0px) + 16px) 16px 24px;
+        background: var(--bg);
+        color: var(--body);
+        font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+      .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; line-height: 1.7; }
+      .btn {
+        appearance: none; border: 1px solid var(--line); background: var(--soft); color: var(--ink);
+        font: inherit; font-size: 12.5px; padding: 7px 13px; border-radius: 8px; cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn:hover { border-color: var(--mint); }
+      .btn[disabled] { opacity: .5; cursor: default; }
+      .disclaimer {
+        margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--mint);
+        background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
+        line-height: 1.7; color: var(--body);
+      }
+      .list { margin-top: 16px; }
+      .item {
+        padding: 10px 2px; border-bottom: 1px solid var(--line);
+      }
+      .item:last-child { border-bottom: none; }
+      .item .t { font-size: 12.5px; color: var(--ink); line-height: 1.6; margin-bottom: 4px; }
+      .item .m { font-size: 11px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+      .item a { color: var(--mint); text-decoration: none; font-size: 11px; }
+      .item a:hover { text-decoration: underline; }
+      .empty {
+        border: 1px dashed var(--line); border-radius: 10px; padding: 22px 16px;
+        text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.8;
+      }
+      .stamp { font-size: 11px; color: var(--muted); margin-top: 14px; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div class="head">
+      <div>
+        <h1>看进展</h1>
+        <div class="hint">胰腺癌药物与研究进展的公开条目，点开可以看原文。</div>
+      </div>
+      <button class="btn" id="refresh">刷新</button>
+    </div>
+
+    <div class="disclaimer">
+      以下为公开文献与试验信息的标题整理，供参考，不构成医疗建议，也不代表疗效结论。
+    </div>
+
+    <div class="list" id="list">
+      <div class="empty">点右上角「刷新」获取最新条目。</div>
+    </div>
+    <div class="stamp" id="stamp"></div>
+
+    <script>
+      const bridge = window.pluginBridge;
+
+      function el(tag, cls, text) {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      }
+
+      function render(items, fetchedAt) {
+        const list = document.getElementById("list");
+        list.textContent = "";
+        if (!items || !items.length) {
+          list.appendChild(el("div", "empty", "最近没有检索到新的条目。可以过几天再来看看。"));
+          return;
+        }
+        for (const it of items) {
+          const wrap = el("div", "item");
+          wrap.appendChild(el("div", "t", it.title || "未命名条目"));
+          const meta = el("div", "m");
+          if (it.source) meta.appendChild(el("span", null, it.source));
+          if (it.date) meta.appendChild(el("span", null, it.date));
+          if (it.url) {
+            const a = el("a", null, "看原文");
+            a.href = "#";
+            a.addEventListener("click", (e) => {
+              e.preventDefault();
+              bridge.invoke("shell.openExternal", { url: it.url }).catch(() => {});
+            });
+            meta.appendChild(a);
+          }
+          wrap.appendChild(meta);
+          list.appendChild(wrap);
+        }
+        document.getElementById("stamp").textContent = fetchedAt ? "抓取于 " + fetchedAt : "";
+      }
+
+      document.getElementById("refresh").addEventListener("click", async () => {
+        const btn = document.getElementById("refresh");
+        btn.disabled = true;
+        btn.textContent = "刷新中…";
+        try {
+          const res = await bridge.invoke("xyb.news.refresh", {});
+          render(res && res.items, res && res.fetchedAt);
+        } catch (e) {
+          const list = document.getElementById("list");
+          list.textContent = "";
+          list.appendChild(el("div", "empty", "获取失败，请检查网络后重试。"));
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "刷新";
+        }
+      });
+    </script>
+  </body>
+</html>

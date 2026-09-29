@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.news",
+  "name": "看进展",
+  "version": "0.1.0",
+  "description": "汇集胰腺癌药物与研究进展条目，只列来源与链接，方便患者自行跟进。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "news",
+        "title": { "en": "Progress", "zh-CN": "看进展" },
+        "icon": "book",
+        "entry": "views/news.html",
+        "order": 30
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.news.refresh",
+        "title": "小胰宝：刷新进展",
+        "keywords": ["进展", "资讯", "新药", "研究", "news"]
+      }
+    ],
+    "settings": [
+      {
+        "key": "cacheHours",
+        "title": "缓存时长（小时）",
+        "type": "number",
+        "default": 12
+      }
+    ]
+  },
+  "permissions": ["ui.view", "net.fetch"],
+  "net": {
+    "domains": ["eutils.ncbi.nlm.nih.gov", "clinicaltrials.gov"]
+  },
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.news.refresh"]
+}

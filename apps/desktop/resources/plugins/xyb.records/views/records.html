@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的资料</title>
+    <style>
+      :root {
+        --mint: #299d8c;
+        --ink: #213139;
+        --body: #48565a;
+        --soft: #edf6f3;
+        --line: #dce7e3;
+        --bg: #ffffff;
+        --muted: #8b9a97;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #e8f1ee;
+          --body: #b8c7c3;
+          --soft: #1f2928;
+          --line: #2a3735;
+          --bg: #161d1f;
+          --muted: #7d8f8c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: calc(var(--pi-plugin-titlebar-height, 0px) + 16px) 16px 24px;
+        background: var(--bg);
+        color: var(--body);
+        font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+      .hint { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+      .btn {
+        appearance: none; border: 1px solid var(--line); background: var(--soft);
+        color: var(--ink); font: inherit; font-size: 12.5px; padding: 7px 13px;
+        border-radius: 8px; cursor: pointer; white-space: nowrap;
+      }
+      .btn:hover { border-color: var(--mint); }
+      .btn.primary { background: var(--mint); border-color: var(--mint); color: #fff; }
+      .disclaimer {
+        margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--mint);
+        background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
+        line-height: 1.7; color: var(--body);
+      }
+      .section { margin-top: 20px; }
+      .section-title { font-size: 12px; color: var(--ink); font-weight: 600; margin-bottom: 8px; }
+      .empty {
+        border: 1px dashed var(--line); border-radius: 10px; padding: 22px 16px;
+        text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.8;
+      }
+      ul.list { list-style: none; margin: 0; padding: 0; }
+      ul.list li {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 7px;
+      }
+      .tag { font-size: 11px; color: var(--mint); border: 1px solid var(--mint);
+             border-radius: 999px; padding: 1px 8px; }
+      .name { color: var(--ink); font-size: 12.5px; }
+      .meta { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div class="head">
+      <div>
+        <h1>我的资料</h1>
+        <div class="hint">把检查报告和就诊资料放在一个本地文件夹里，小胰宝帮你有条理地存好。</div>
+      </div>
+      <button class="btn primary" id="import">导入资料</button>
+    </div>
+
+    <div class="disclaimer">
+      资料只存在你自己的电脑上。需要让 AI 帮忙看时，姓名、电话等会先被隐藏。
+    </div>
+
+    <div class="section">
+      <div class="section-title">资料库</div>
+      <div id="vault"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">资料分类</div>
+      <ul class="list" id="buckets"></ul>
+    </div>
+
+    <script>
+      const bridge = window.pluginBridge;
+      const DISCLAIMER = "以下信息供参考，不能替代医生诊断。";
+
+      function renderVault(vaultDir) {
+        const el = document.getElementById("vault");
+        el.textContent = "";
+        if (!vaultDir) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "还没有设置资料库位置。打开插件设置，选一个文件夹作为你的资料库。";
+          el.appendChild(empty);
+          return;
+        }
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = vaultDir;
+        el.appendChild(meta);
+      }
+
+      function renderBuckets(buckets) {
+        const el = document.getElementById("buckets");
+        el.textContent = "";
+        const items = Object.entries(buckets || {});
+        if (!items.length) {
+          const li = document.createElement("li");
+          const span = document.createElement("span");
+          span.className = "meta";
+          span.textContent = "导入资料后，这里会显示各类资料的数量";
+          li.appendChild(span);
+          el.appendChild(li);
+          return;
+        }
+        for (const [k, v] of items) {
+          const li = document.createElement("li");
+          const name = document.createElement("span");
+          name.className = "name";
+          name.textContent = k;
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = v + " 份";
+          li.append(name, tag);
+          el.appendChild(li);
+        }
+      }
+
+      async function refresh() {
+        try {
+          const settings = await bridge.invoke("plugin.getSettings", {});
+          renderVault((settings && settings.vaultDir) || "");
+        } catch (e) {
+          renderVault("");
+        }
+        renderBuckets({});
+      }
+
+      document.getElementById("import").addEventListener("click", async () => {
+        const btn = document.getElementById("import");
+        btn.disabled = true;
+        try {
+          const res = await bridge.invoke("xyb.records.import", {});
+          if (res && res.buckets) renderBuckets(res.buckets);
+        } catch (e) {
+          /* 用户取消或权限未授予，静默处理 */
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      refresh();
+    </script>
+  </body>
+</html>

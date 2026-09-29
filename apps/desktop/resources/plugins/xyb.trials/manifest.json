@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.trials",
+  "name": "找试验",
+  "version": "0.1.0",
+  "description": "按患者自身情况检索临床试验，给出候选清单、匹配理由与来源链接。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "trials",
+        "title": { "en": "Find Trials", "zh-CN": "找试验" },
+        "icon": "target",
+        "entry": "views/trials.html",
+        "order": 20
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.trials.search",
+        "title": "小胰宝：按我的情况找试验",
+        "keywords": ["临床试验", "入组", "试验", "trial", "NCT", "ChiCTR"]
+      }
+    ],
+    "skills": ["skills/trial-match.md"],
+    "agentTools": [
+      {
+        "name": "xyb_trials_search",
+        "description": "按病种与关键词检索公开临床试验（ClinicalTrials.gov），返回试验编号、状态、分期与来源链接。支持中文关键词（内部转成英文检索词）。仅返回公开信息，不构成医疗建议。",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "condition": { "type": "string", "description": "病种（英文更准），默认 pancreatic cancer" },
+            "terms": { "type": "string", "description": "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」" }
+          }
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "sourceCtGov",
+        "title": "检索 ClinicalTrials.gov",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "sourceChiCTR",
+        "title": "检索 ChiCTR（中国临床试验注册中心）",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  },
+  "permissions": ["ui.view", "agent.tool.register", "agent.prompt.inject", "net.fetch"],
+  "net": {
+    "domains": ["clinicaltrials.gov", "www.chictr.org.cn", "chinadrugtrials.org.cn"]
+  },
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.trials.search"]
+}
