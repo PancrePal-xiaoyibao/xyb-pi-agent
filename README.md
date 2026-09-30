@@ -175,13 +175,13 @@ plainly rather than pretending the work was done.
 
 This is what decides **when you can just ask, and when something has to be configured**.
 
-<img src="docs/image/readme/xyb-family-scenarios.svg" alt="Four questions a family member asks, and which layer each one lands on" width="94%" />
+<img src="docs/image/readme/xyb-family-scenarios.png" alt="Four questions a family member asks, and which layer each one lands on" width="94%" />
 
 Three of the four things families ask for most need **nothing but a skill** — no network,
 no setup, no permission. The execution layer only gets involved when real external data
 has to be fetched.
 
-<img src="docs/image/readme/xyb-trial-search-layers.svg" alt="What each layer does during one real trial search" width="94%" />
+<img src="docs/image/readme/xyb-trial-search-layers.png" alt="What each layer does during one real trial search" width="94%" />
 
 That second one is a real search (B7-H3, recruiting in China). The layer that changed the
 outcome most was the lightest one: switching the default condition from pancreatic cancer

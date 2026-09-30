@@ -168,12 +168,12 @@
 
 看懂下面这个分层，就知道**什么时候什么都不用做，什么时候需要配置**。
 
-<img src="docs/image/readme/xyb-family-scenarios.svg" alt="病友家属的四种问法分别落到哪一层" width="94%" />
+<img src="docs/image/readme/xyb-family-scenarios.png" alt="病友家属的四种问法分别落到哪一层" width="94%" />
 
 四件家属最常做的事里，**三件只用到技能**——不联网、不配置、不授权。
 只有真要取外部数据时才动执行层。
 
-<img src="docs/image/readme/xyb-trial-search-layers.svg" alt="一次真实检索里技能、执行层与插件各做了什么" width="94%" />
+<img src="docs/image/readme/xyb-trial-search-layers.png" alt="一次真实检索里技能、执行层与插件各做了什么" width="94%" />
 
 上面这张是实测的一次检索（B7-H3，中国在招募）。三层里影响结果质量最大的，
 反而是最轻的技能层：把默认病种从胰腺癌改成 `solid tumor`，结果从 6 条变成 20 条。
