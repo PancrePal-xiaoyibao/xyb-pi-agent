@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,10 +24,27 @@ const NOTARY_ENV = {
   APPLE_TEAM_ID: "DUV63RKYTW",
 };
 
+// The verified bundle name comes from the build config, not from this file:
+// verify-macos-release.sh reads `build.productName`, and the DMG name follows
+// `build.dmg.artifactName`. Both are read here so a rebrand cannot silently
+// turn the fixture into the wrong shape (which is exactly how the gate broke
+// when the app was renamed).
+const desktopPackage = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
+const PRODUCT_NAME = desktopPackage.build.productName;
+
+function dmgName(version) {
+  return desktopPackage.build.dmg.artifactName
+    .replaceAll("${version}", version)
+    .replaceAll("${arch}", "arm64")
+    .replaceAll("${ext}", "dmg");
+}
+
 async function writeSignedAppFixture(release) {
-  const app = join(release, "mac-arm64", "PI-Desktop.app");
+  const app = join(release, "mac-arm64", `${PRODUCT_NAME}.app`);
   const hostCore = join(app, "Contents", "Resources", "bin", "pi-desktop-host-core");
-  const dmg = join(release, "PI-Desktop-0.14.2-arm64.dmg");
+  const dmg = join(release, dmgName("0.14.2"));
   await mkdir(join(app, "Contents", "Resources", "bin"), { recursive: true });
   await writeFile(hostCore, "fixture");
   await writeFile(dmg, "fixture");
@@ -34,7 +52,7 @@ async function writeSignedAppFixture(release) {
 }
 
 async function writeDmgFixture(release) {
-  const dmg = join(release, "PI-Desktop-0.15.1-beta.3-arm64.dmg");
+  const dmg = join(release, dmgName("0.15.1-beta.3"));
   await mkdir(release, { recursive: true });
   await writeFile(dmg, "fixture");
   return dmg;
@@ -205,7 +223,9 @@ test("the notarization step fails closed without team-scoped credentials", async
     APPLE_TEAM_ID: "WRONGTEAMID",
   });
   assert.equal(wrongTeam.status, 1);
-  assert.match(wrongTeam.stderr, /APPLE_TEAM_ID must be DUV63RKYTW/);
+  // The gate checks the shape of the team id rather than pinning one specific
+  // team, so a fork does not have to edit a test to sign with its own cert.
+  assert.match(wrongTeam.stderr, /APPLE_TEAM_ID must be 10 alphanumeric characters/);
 
   assert.equal(
     await readFile(log, "utf8").catch(() => ""),
@@ -253,7 +273,7 @@ test("macOS release verification requires a notarized Developer ID app and DMG",
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Notarized Developer ID/);
-  assert.match(result.stdout, /PI-Desktop-0\.14\.2-arm64\.dmg/);
+  assert.ok(result.stdout.includes(dmg), `the verified DMG is reported:\n${result.stdout}`);
   assert.match(result.stdout, /host-core sidecar/);
   assert.equal(
     await readFile(staplerLog, "utf8"),

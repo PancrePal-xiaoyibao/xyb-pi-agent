@@ -244,7 +244,11 @@ test("diagnostics report an available Developer ID identity", async (t) => {
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: MATCHING_IDENTITY });
 
-  const result = runDiagnostics(bin);
+  // The identity is named explicitly: the script has no built-in default, so
+  // that a fork never compares its log against the upstream team's cert.
+  const result = runDiagnostics(bin, {
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /^==> System$/m);
@@ -267,7 +271,10 @@ test("diagnostics fail closed when --require-identity finds no identity", async 
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: NO_IDENTITIES });
 
-  const result = runDiagnostics(bin, { args: ["--require-identity"] });
+  const result = runDiagnostics(bin, {
+    args: ["--require-identity"],
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /not available/);
@@ -284,7 +291,9 @@ test("diagnostics treat a missing identity as a warning by default", async (t) =
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: NO_IDENTITIES });
 
-  const result = runDiagnostics(bin);
+  const result = runDiagnostics(bin, {
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.ok(

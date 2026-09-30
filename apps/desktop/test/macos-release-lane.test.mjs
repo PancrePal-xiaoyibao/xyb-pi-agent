@@ -18,6 +18,7 @@ import test from "node:test";
  */
 
 const scripts = new URL("../../../scripts/", import.meta.url);
+const desktopPackageJson = new URL("../package.json", import.meta.url);
 const LANE_SCRIPTS = [
   "release-macos.sh",
   "notarize-and-staple-macos-release-dmg.sh",
@@ -29,8 +30,26 @@ const LANE_SCRIPTS = [
 const SIGNING_IDENTITY = "Developer ID Application: XingYu Liu (DUV63RKYTW)";
 const SUBMISSION_ID = "11111111-2222-3333-4444-555555555555";
 
-async function writeStubs(bin, log, repoRoot) {
+/**
+ * The lane reads the packaged app name from the build config instead of pinning
+ * it, so the fixture has to produce whatever `build.productName` says. Reading
+ * it here keeps the stub honest across a rebrand.
+ */
+async function readBuildConfig() {
+  return JSON.parse(await readFile(desktopPackageJson, "utf8")).build;
+}
+
+function dmgName(build, version) {
+  return build.dmg.artifactName
+    .replaceAll("${version}", version)
+    .replaceAll("${arch}", "arm64")
+    .replaceAll("${ext}", "dmg");
+}
+
+async function writeStubs(bin, log, repoRoot, build) {
   await mkdir(bin, { recursive: true });
+  const productName = build.productName;
+  const dmg = dmgName(build, "0.0.0");
   const stubs = {
     cargo: `#!/usr/bin/env bash
 printf 'cargo %s\\n' "$*" >> "${log}"
@@ -42,11 +61,11 @@ exit 0
 printf 'pnpm %s\\n' "$*" >> "${log}"
 case "$*" in
   *electron-builder*)
-    app="${repoRoot}/apps/desktop/release/mac-arm64/PI-Desktop.app"
+    app="${repoRoot}/apps/desktop/release/mac-arm64/${productName}.app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin"
-    : > "$app/Contents/MacOS/PI-Desktop"
+    : > "$app/Contents/MacOS/${productName}"
     : > "$app/Contents/Resources/bin/pi-desktop-host-core"
-    : > "${repoRoot}/apps/desktop/release/PI-Desktop-0.0.0-arm64.dmg"
+    : > "${repoRoot}/apps/desktop/release/${dmg}"
     ;;
 esac
 exit 0
@@ -97,13 +116,24 @@ test(
       await cp(new URL(name, scripts), join(repoRoot, "scripts", name));
     }
     await chmod(join(repoRoot, "scripts", "release-macos.sh"), 0o755);
-    await writeStubs(bin, log, repoRoot);
+
+    // verify-macos-release.sh resolves the packaged app name from this file, so
+    // the temporary repository root needs the same build config the real one has.
+    const build = await readBuildConfig();
+    await writeFile(
+      join(repoRoot, "apps/desktop/package.json"),
+      `${JSON.stringify({ name: "@pi-desktop/desktop", version: "0.0.0", build }, null, 2)}\n`,
+    );
+    await writeStubs(bin, log, repoRoot, build);
 
     const result = spawnSync("bash", [join(repoRoot, "scripts", "release-macos.sh")], {
       encoding: "utf8",
       env: {
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
+        // The lane deliberately has no default identity: a fork must name its
+        // own certificate rather than inherit the upstream team's.
+        MAC_SIGNING_IDENTITY: SIGNING_IDENTITY,
         APPLE_ID: "release@example.com",
         APPLE_APP_SPECIFIC_PASSWORD: "app-specific-password",
         APPLE_TEAM_ID: "DUV63RKYTW",

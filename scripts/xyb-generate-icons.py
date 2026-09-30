@@ -112,7 +112,11 @@ def main():
     # Windows .ico（多尺寸）
     ico = os.path.join(OUT, "icon.ico")
     ims = [Image.open(made[s]).convert("RGBA") for s, _ in ICO_SIZES]
-    ims[0].save(ico, format="ICO", sizes=ICO_SIZES, append_images=ims[1:])
+    # 底板必须用最大的那张。Pillow 的 ICO 写入只会「向下」生成 sizes，
+    # 拿 16×16 当底板（原写法 ims[0]）就只会写出一条 16×16 记录——
+    # 655 字节的单尺寸 ico，Windows 任务栏/资源管理器图标全尺寸发虚。
+    # append_images 对 ICO 无效，删掉以免误导。
+    ims[-1].save(ico, format="ICO", sizes=ICO_SIZES)
     print(f"ico: {ico}")
 
     # UI 品牌区 192

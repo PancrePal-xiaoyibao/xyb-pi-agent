@@ -197,25 +197,13 @@ jobs:
         # aligned with the runner selected by this matrix entry.
         run: pnpm --filter @pi-desktop/desktop run ${{ matrix.dist }} -- --${{ matrix.arch }}
 
-      - name: Package unsigned macOS installer
-        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE != 'true'
-        env:
-          # Debug-only lane: workflow_dispatch with sign_macos=false.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          set -euo pipefail
-          # Artifact names are defined in apps/desktop/package.json: the mac
-          # pattern labels ZIPs, and the dmg target pattern labels DMGs.
-          pnpm --filter @pi-desktop/desktop run dist:mac -- --${{ matrix.arch }}
-
-      - name: Diagnose macOS signing environment
-        # Records the runner baseline (system, codesign, identities, keychain,
-        # Xcode tools, Apple timestamp reachability) before electron-builder
-        # imports the certificate. Informational: the Developer ID identity is
-        # absent here by design and is imported from CSC_LINK during packaging.
-        if: matrix.platform == 'macos'
-        run: scripts/macos-signing-diagnostics.sh
-
+      # This step runs *before* either package step, because it is the one that
+      # chooses between them. Upstream failed the job here when the secrets were
+      # absent, which meant a fork could not cut a release at all until its owner
+      # had a paid Developer ID certificate. A missing secret is a downgrade, not
+      # an error: the job writes MACOS_SIGN_RELEASE=false, and every later step
+      # gated on it (the signed package, DMG notarization, release verification)
+      # skips itself while the unsigned lane below takes over.
       - name: Require macOS signing and notarization secrets
         if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
         env:
@@ -233,9 +221,10 @@ jobs:
           [[ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ]] || missing+=(APPLE_APP_SPECIFIC_PASSWORD)
           [[ -n "${APPLE_TEAM_ID}" ]] || missing+=(APPLE_TEAM_ID)
           if ((${#missing[@]} > 0)); then
-            echo "::error::Missing GitHub Actions secrets for macOS signing/notarization: ${missing[*]}"
-            echo "::error::Add them under Settings → Secrets and variables → Actions. See docs/spec/06-delivery/06-release-runbook.md."
-            exit 1
+            echo "::warning::Missing GitHub Actions secrets for macOS signing/notarization: ${missing[*]}"
+            echo "::warning::Shipping unsigned macOS artifacts instead. Add them under Settings → Secrets and variables → Actions to sign and notarize; see docs/spec/06-delivery/06-release-runbook.md."
+            echo "MACOS_SIGN_RELEASE=false" >> "$GITHUB_ENV"
+            exit 0
           fi
           # Shape check, not an equality check against one team id: upstream
           # pinned DUV63RKYTW here, which made every fork's release lane fail.
@@ -244,6 +233,26 @@ jobs:
             echo "::error::APPLE_TEAM_ID must be 10 alphanumeric characters. Find it at developer.apple.com/account → Membership details."
             exit 1
           fi
+
+      - name: Package unsigned macOS installer
+        # Reachable two ways: workflow_dispatch with sign_macos=false, or the
+        # downgrade above when the signing secrets are absent.
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          # Artifact names are defined in apps/desktop/package.json: the mac
+          # pattern labels ZIPs, and the dmg target pattern labels DMGs.
+          pnpm --filter @pi-desktop/desktop run dist:mac -- --${{ matrix.arch }}
+
+      - name: Diagnose macOS signing environment
+        # Records the runner baseline (system, codesign, identities, keychain,
+        # Xcode tools, Apple timestamp reachability) before electron-builder
+        # imports the certificate. Informational: the Developer ID identity is
+        # absent here by design and is imported from CSC_LINK during packaging.
+        if: matrix.platform == 'macos'
+        run: scripts/macos-signing-diagnostics.sh
 
       - name: Package signed and notarized macOS installer
         if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
@@ -336,16 +345,16 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          expected_dmg=(apps/desktop/release/PI-Desktop-*-${{ matrix.arch }}.dmg)
-          expected_dmg_blockmap=(apps/desktop/release/PI-Desktop-*-${{ matrix.arch }}.dmg.blockmap)
-          expected_zip=(apps/desktop/release/PI-Desktop-*-${{ matrix.arch }}-mac.zip)
-          expected_zip_blockmap=(apps/desktop/release/PI-Desktop-*-${{ matrix.arch }}-mac.zip.blockmap)
+          expected_dmg=(apps/desktop/release/xiaoyibao-*-${{ matrix.arch }}.dmg)
+          expected_dmg_blockmap=(apps/desktop/release/xiaoyibao-*-${{ matrix.arch }}.dmg.blockmap)
+          expected_zip=(apps/desktop/release/xiaoyibao-*-${{ matrix.arch }}-mac.zip)
+          expected_zip_blockmap=(apps/desktop/release/xiaoyibao-*-${{ matrix.arch }}-mac.zip.blockmap)
           if [[ "${#expected_dmg[@]}" -ne 1 || "${#expected_dmg_blockmap[@]}" -ne 1 || "${#expected_zip[@]}" -ne 1 || "${#expected_zip_blockmap[@]}" -ne 1 ]]; then
             echo "::error::Expected exactly one ${{ matrix.arch }} DMG, DMG blockmap, ZIP, and ZIP blockmap."
             printf '%s\n' apps/desktop/release/* || true
             exit 1
           fi
-          for artifact in apps/desktop/release/PI-Desktop-*; do
+          for artifact in apps/desktop/release/xiaoyibao-*; do
             case "$artifact" in
               *-${{ matrix.arch }}.dmg|*-${{ matrix.arch }}.dmg.blockmap|*-${{ matrix.arch }}-mac.zip|*-${{ matrix.arch }}-mac.zip.blockmap) ;;
               *)

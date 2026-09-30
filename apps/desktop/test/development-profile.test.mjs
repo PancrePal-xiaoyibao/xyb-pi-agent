@@ -4,6 +4,7 @@ import { register } from "node:module";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { APP_NAME } from "@pi-desktop/shared";
 import { readMainModule } from "./helpers/source-contracts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +36,9 @@ test("a development build owns a different data directory than the shipped app",
   // the split can only have moved the development side.
   assert.equal(INSTALLATION_DATA_DIR_NAME, ".pi-desktop");
   assert.equal(DEVELOPMENT_DATA_DIR_NAME, ".pi-desktop-dev");
-  assert.equal(DEVELOPMENT_INSTALLATION_NAME, "PI-Desktop Dev");
+  // Only the Electron `userData` directory follows the product name, so this is
+  // the fork's APP_NAME and not upstream's "PI-Desktop".
+  assert.equal(DEVELOPMENT_INSTALLATION_NAME, `${APP_NAME} Dev`);
 });
 
 test("PI_DESKTOP_DATA_DIR still overrides either profile", () => {

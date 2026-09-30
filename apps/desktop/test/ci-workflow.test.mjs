@@ -159,7 +159,7 @@ test("release workflow publishes the Linux ASAR beside installers", () => {
   );
   assert.match(
     releaseAsarScriptSource,
-    /PI-Desktop-\$\{releaseVersion\}-linux-x64\.asar/,
+    /xiaoyibao-\$\{releaseVersion\}-linux-x64\.asar/,
   );
 });
 
@@ -178,12 +178,12 @@ test("release matrix packages both native macOS architectures", () => {
   );
   assert.equal(
     JSON.parse(desktopPackageSource).build.mac.artifactName,
-    "PI-Desktop-${version}-${arch}-mac.${ext}",
+    "xiaoyibao-${version}-${arch}-mac.${ext}",
     "macOS ZIP names include the target architecture",
   );
   assert.equal(
     JSON.parse(desktopPackageSource).build.dmg.artifactName,
-    "PI-Desktop-${version}-${arch}.${ext}",
+    "xiaoyibao-${version}-${arch}.${ext}",
     "macOS DMG names include the target architecture",
   );
   assert.match(
@@ -232,7 +232,14 @@ test("macOS release signing is required on tag pushes", () => {
     releaseWorkflowSource,
     /Require macOS signing and notarization secrets[\s\S]*?Missing GitHub Actions secrets for macOS signing/,
   );
-  assert.match(releaseWorkflowSource, /APPLE_TEAM_ID must be DUV63RKYTW/);
+  // The fork validates the *shape* of the team id rather than comparing it
+  // against one hardcoded upstream team, which is exactly what made every
+  // fork's release lane fail on this step.
+  assert.match(
+    releaseWorkflowSource,
+    /APPLE_TEAM_ID must be 10 alphanumeric characters/,
+    "the release lane refuses a team id that is not ten alphanumerics",
+  );
 
   const signedBlock = releaseWorkflowSource.match(
     /- name: Package signed and notarized macOS installer[\s\S]*?(?=\n      - name:)/,
@@ -251,7 +258,12 @@ test("macOS release signing is required on tag pushes", () => {
   // electron-builder throws InvalidConfigurationError when an identity name
   // keeps the "Developer ID Application:" prefix, so CSC_NAME carries the bare
   // common name and the CLI must not pass -c.mac.identity.
-  assert.match(signedBlock, /CSC_NAME: "XingYu Liu \(DUV63RKYTW\)"/);
+  // A fork cannot hardcode the upstream author's common name, so this repo
+  // carries its own identity in the CSC_NAME repository variable.
+  assert.ok(
+    signedBlock.includes("CSC_NAME: ${{ vars.CSC_NAME }}"),
+    "the signed lane takes its identity from the CSC_NAME repository variable",
+  );
   assert.doesNotMatch(signedBlock, /-c\.mac\.identity=/);
   assert.doesNotMatch(signedBlock, /CSC_NAME: "Developer ID Application:/);
   assert.match(signedBlock, /-c\.mac\.notarize=true/);
@@ -313,7 +325,11 @@ test("the signed local macOS lane selects the native runner architecture", () =>
   assert.match(releaseMacScriptSource, /MAC_ARCH="\$\{MAC_ARCH:-\$DEFAULT_MAC_ARCH\}"/);
   assert.match(releaseMacScriptSource, /must match the host/);
   assert.match(releaseMacScriptSource, /electron-builder --mac "--\$\{MAC_ARCH\}"/);
-  assert.match(releaseMacScriptSource, /XingYu Liu \(DUV63RKYTW\)/);
+  // Upstream pinned its own Developer ID common name here. A fork must supply
+  // its own, so the script takes it from MAC_SIGNING_IDENTITY and refuses to
+  // guess when it is absent.
+  assert.match(releaseMacScriptSource, /MAC_SIGNING_IDENTITY="\$\{MAC_SIGNING_IDENTITY:-\}"/);
+  assert.match(releaseMacScriptSource, /MAC_SIGNING_IDENTITY is required/);
   assert.match(
     releaseMacScriptSource,
     /MAC_SIGNING_IDENTITY="\$\{MAC_SIGNING_IDENTITY#Developer ID Application: \}"/,
