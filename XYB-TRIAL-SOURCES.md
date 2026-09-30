@@ -12,16 +12,17 @@
 |---|---|---|---|---|
 | `chictr_trials` | npm MCP 服务 `chictr-mcp-server@2.0.2` | 仅 `www.chictr.org.cn` | 无 | **Apache-2.0**（README 徽章误标 MIT） |
 | `ctv-mcp-server` | 本地 MCP 服务，未发布 npm | `ctv.veeva.com`（GraphQL 公开，无鉴权） | 无 | MIT |
-| `chinadrugtrials` | Python 采集器 + 独立技能 | `chinadrugtrials.org.cn` | **需用户本人浏览器会话 Cookie** | **无 LICENSE 文件** |
+| `chinadrugtrials` | 本插件自带采集器 + MCP 服务 | `chinadrugtrials.org.cn` | **需患者本人浏览器会话** | 源仓库无 LICENSE 文件（见第七节） |
 | `clinicaltrials推送和订阅` | 运维/推送系统（Skill） | 多 | **12+ 组密钥**（TG / 微信 / 飞书 / FastGPT / LLM） | MIT |
 
-**关键判断**：后两者**不接入客户端**。
+**关键判断**：
 
-- `chinadrugtrials` 需要授权会话 Cookie，属用户私密凭据，不适合预置进分发插件；
-  且无 LICENSE（默认保留所有权利），因此**不内联其代码**，只在技能文档里写清用法，用用户本机已有副本。
-- `clinicaltrials推送和订阅` 是**运营侧情报系统**（TG/GeWe/飞书推送 + FastGPT 同步），
+- `chinadrugtrials` **已接入**。原判断是「不接入」，理由是授权会话不适合预置进分发插件。
+  这一条仍成立，但结论改了：会话不进插件，而是落到患者本机的 `~/.xyb-chinadrugtrials/config.json`（0600），
+  由患者本人在浏览器里复制 cURL 写入。**插件里没有任何凭据**。
+- `clinicaltrials推送和订阅` **仍不接入**。它是**运营侧情报系统**（TG/GeWe/飞书推送 + FastGPT 同步），
   不是患者查询来源。它带 12+ 组生产密钥，进客户端只会扩大凭据面。
-  它对应的患者侧能力（"有更新提醒我"）由 Veeva CTV 的 `create_watchlist` / `run_watchlist` 承担。
+  它对应的患者侧能力（“有更新提醒我”）由 Veeva CTV 的 `create_watchlist` / `run_watchlist` 承担。
 
 ---
 
@@ -146,7 +147,94 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
 
 ---
 
-## 六、待决事项
+## 六、chinadrugtrials 接入（2026-09-30）
+
+### 为什么是 MCP，而不是「让助手跑脚本」
+
+插件系统没有 shell/exec 权限（见第二节），所以把 Python 采集器交给助手去终端执行**不是一条正规通道**。
+正解是把采集器包成 MCP 服务，宿主按 `contributes.mcpServers` 拉起。
+
+选型：MCP 服务用 **零依赖 Node**（`mcp/chinadrugtrials-mcp.mjs`，只用内置模块），
+抓取时再 `spawn` 采本插件自带的 Python 采集器。理由是分层隔离——
+
+| 层 | 运行时 | 缺了会怎样 |
+|---|---|---|
+| MCP 服务本身 | Node（应用生态已有） | 服务起不来 |
+| 抓取逻辑 | Python 3 + requests + beautifulsoup4 | 工具能列出，抓取报「先调 setup_environment」 |
+
+这样「Python 没装」只影响抓取，不会让整个 MCP 服务失联——患者看到的是**一句可执行的话**，
+而不是一个不存在的工具。
+
+### 声明形态
+
+```json
+{ "id": "chinadrugtrials", "transport": "stdio", "command": "./mcp/chinadrugtrials-mcp.mjs" }
+```
+
+用**插件内相对可执行文件**，不是绝对路径（宿主会拒），也不是 `npx`（少一层网络与缓存不确定性）。
+依据：`host-core/src/plugins/validation.rs` 对含 `/` 的 command 做 `safe_join(root, command)`
+并检查文件存在；`scripts/xyb-check-plugins.mjs` 同步补了**执行位**检查——
+宿主是直接 exec 这个文件的，缺执行位会 EACCES，表现是「插件启用了但一个工具都没有」，最难定位。
+
+### 组成
+
+| 路径 | 作用 |
+|---|---|
+| `mcp/chinadrugtrials-mcp.mjs` | MCP 服务，8 个工具 |
+| `collectors/chinadrugtrials/` | 内联的 Python 采集器（见该目录 README 的来源与许可说明） |
+| `skills/china-drug-trials.md` | 操作细则：参数、会话红线、环境前置、故障排查 |
+| `scripts/xyb-setup-chinadrugtrials.sh` | 终端手动准备环境（幂等，与应用内 `setup_environment` 等价） |
+
+工具：`get_collector_status` / `setup_environment` / `update_cookie` / `search_trials` /
+`sync_incremental` / `get_trial_detail` / `list_archived` / `verify_archive`。
+
+### 会话与凭据设计
+
+会话**不进插件、不进仓库**，落在患者本机 `~/.xyb-chinadrugtrials/config.json`（权限 0600）。
+
+- 传到采集器时走 `--config` **文件**，不走命令行参数——命令行会出现在进程列表里，别的进程读得到
+- `update_cookie` **不回显** Cookie 值，只回字段名；日志、回答、提交里都不出现
+- 提取到但缺少平台常见会话字段时，工具会**提示可能不是站内请求的完整 Cookie**（而不是默默存下）
+- 配置里刻意不写采集器认识的 `output` / `keywords` / `max_pages` 等键——
+  采集器是 config 优先，塞了会静默覆盖命令行传的值
+
+### 实测（本轮真实执行）
+
+| 验证项 | 结果 |
+|---|---|
+| MCP 握手 `initialize` + `tools/list` | ✓ 8 个工具枚举正常 |
+| 从**任意 cwd** 以绝对路径启动（模拟宿主 spawn） | ✓ 插件目录推导正确 |
+| `setup_environment` | ✓ 16 秒建好 venv 并装上 requests / beautifulsoup4 |
+| `get_collector_status` | ✓ 装完后 `ready: true`，解释器切到 venv |
+| `update_cookie`（假 cURL） | ✓ 提取出 3 个字段，落盘 0600，不回显 |
+| `update_cookie`（垃圾串） | ✓ 拒绝，不误存 |
+| `search_trials`（**故意用假会话**） | ✓ 站点返回反爬挑战页 → 工具如实报「会话失效」，**没有**误报「0 条结果」 |
+| 校验器反例 | ✓ 去掉执行位即报错，恢复后通过 |
+| 官方 `pi-plugin check` | ✓ 16 files, 140.5 KB |
+
+**两处踩到的坑（已修）**：
+
+1. **异步工具被提前打断**：输入流关闭时我原本直接 `process.exit(0)`，
+   抓取这类长任务会「结果还没写出去就退出」，调用方收到空响应。
+   改为追踪 pending 计数，任务收尾后才退出。
+2. **诊断取错日志流**：采集器的日志走的是 **stdout**（不是 stderr），
+   我原先只取 stderr 的尾部 → 出错时 `log_tail` 全空、提示也泛泛。
+   改为两股合并取尾部，并单独提取采集器最后一条 `[ERROR]` 行作为结论。
+
+另外把「归档目录」的判定改成**必须真的含 `.json` 记录**：
+采集器建对象时就把 `json/ word/ logs/ raw/` 建好，会话失效时会留下一个全空目录，
+那种目录不能算归档，否则患者会看到「胰腺癌 0 条」这种像是结论的东西。
+
+### 许可（待处理）
+
+上游 `chinadrugtrials-collector` **没有 LICENSE 文件**，按默认规则即「保留所有权利」，
+严格讲不满足再分发的明确授权。该仓库同属小胰宝组织（`PancrePal-xiaoyibao`），
+本次按「自有代码内联」处理，但**建议尽快补 LICENSE**，否则对外分发时说不清楚。
+详见 `collectors/chinadrugtrials/README.md`。
+
+---
+
+## 七、待决事项
 
 1. **是否启用 `xyb.trial-sources`**：启用即授予 `mcp.server.local`（拉起本地进程）。
    患者侧默认是否开启，需产品定调。
@@ -156,3 +244,10 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
 4. **CDE 是否接入**：公开检索能力有限，当前只在技能文档里作为方向提及。
 5. **跨社区**：小铃铛（淋巴瘤）、小肺宝（肺癌）是否同 App 承载，仍待定
    （见 `XYB-ASSISTANTS.md`）。
+6. **`chinadrugtrials-collector` 补 LICENSE**：无 LICENSE 即默认保留所有权利，
+   对外分发前应补上（第六节「许可」）。
+7. **患者端会话配置的体验**：现在要求患者对站内请求「复制为 cURL」，
+   对不熟悉开发者工具的人门槛偏高。是否做一个带图示的分步引导，或在
+   「试验来源」面板里直接给入口，需产品定调。
+8. **抓取耗时与提醒**：逐条抓取（每条 1.5 秒）在条数多时是分钟级。
+   是否要默认只抓前 N 条并提示「先看看这批，再决定要不要继续」。

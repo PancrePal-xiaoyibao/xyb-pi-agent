@@ -15,16 +15,17 @@
 
 | 类型 | 内容 |
 |---|---|
-| MCP 服务 | `chictr`、`veeva-ctv` |
-| 技能 | `skills/china-trials.md`（中国试验来源接入） |
+| MCP 服务 | `chictr`、`veeva-ctv`、`chinadrugtrials` |
+| 采集器 | `collectors/chinadrugtrials/`（Python，供上面的 MCP 服务调用） |
+| 技能 | `skills/china-trials.md`（中国试验来源接入）、`skills/china-drug-trials.md`（登记平台操作细则） |
 | 视图 | 「试验来源」面板：逐源写清覆盖范围、能查什么、需要什么、注意什么 |
 | 命令 | 小胰宝：看看有哪些试验来源 |
 
 权限：`ui.view`、`agent.prompt.inject`、`mcp.server.local`。
 **不申请** `fs.*` 与 `net.fetch`——本插件不读写患者文件、不自己发网络请求，
-联网检索由 MCP 服务在各自进程内完成。
+联网检索与抓取都由 MCP 服务在各自进程内完成。
 
-## 两个来源的前置条件
+## 三个来源的前置条件
 
 ### chictr（ChiCTR 中国临床试验注册中心）
 
@@ -59,12 +60,29 @@ npm link          # 或在有权限的环境下全局安装
 > 处理：备份旧库 → 让服务按新 schema 重建（40 列）→ 重新建索引。
 > 详见 `XYB-TRIAL-SOURCES.md`。
 
-## 两处没接进插件的来源
+### chinadrugtrials（中国药物临床试验登记与信息公示平台）
 
-- **中国药物临床试验登记与信息公示平台**：本机 Python 采集器，不是 MCP，
-  且**必须由用户本人提供浏览器会话 Cookie**。接入方式写在技能文档里，由助手在会话中调用本机脚本。
-  凭据只留在本机 `config.json`，不进本插件、不入仓库。
-  该项目**没有 LICENSE 文件**（默认保留所有权利），因此不内联其代码，只用本机已有副本。
+声明为**插件内相对可执行文件** `./mcp/chinadrugtrials-mcp.mjs`（零依赖 Node，只用内置模块）。
+抓取逻辑复用本插件自带的 Python 采集器 `collectors/chinadrugtrials/`。
+
+宿主允许把 `command` 写成插件内相对路径（`host-core/src/plugins/validation.rs` 会
+`safe_join` 到插件目录并要求文件存在），这条路径比 `npx` 少一层网络与缓存不确定性。
+
+它比另两处多两层前置，所以技能文档单独成篇：
+
+| 前置 | 谁来做 | 说明 |
+|---|---|---|
+| Python 3 | **患者本人** | 工具装不了 Python。macOS 可 `xcode-select --install` |
+| 采集器依赖 | 助手可代劳 | `setup_environment` 工具一键建 venv 并装 `requests` / `beautifulsoup4` |
+| 浏览器会话 | **患者本人** | 站点校验会话。对站内**实际搜索请求**「复制为 cURL」→ `update_cookie` 保存 |
+
+数据落在 `~/.xyb-chinadrugtrials/`，会话文件权限 0600，**不回显、不写日志、不进仓库**。
+
+**CSV/命令行路径**：不想用助手时，可以跑
+`bash scripts/xyb-setup-chinadrugtrials.sh` 准备环境，再按技能文档直接调采集器。
+
+## 一处没接进插件的来源
+
 - **CDE 药物临床试验登记平台**：公开检索能力有限，不入客户端，以官方公示为准。
 
 ## 校验

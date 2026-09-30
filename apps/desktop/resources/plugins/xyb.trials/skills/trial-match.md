@@ -19,7 +19,7 @@ description: 当用户想找临床试验、问"有没有适合我的试验""临�
 |---|---|
 | **ClinicalTrials.gov** | 官方 API v2，字段规范、可追溯，作为**基准源**。本插件已提供 `xyb_trials_search` 工具，**开箱可用** |
 | **ChiCTR**（中国临床试验注册中心） | 国内注册试验，注册号形如 `ChiCTRxxxxxx`。需启用「中国与区域试验来源」插件后经 MCP 工具检索 |
-| **药物临床试验登记与信息公示平台** | `www.chinadrugtrials.org.cn`，药企/医院注册详情，含 CTR 编号。需用户本人浏览器会话 Cookie，走本机采集器 |
+| **药物临床试验登记与信息公示平台** | `www.chinadrugtrials.org.cn`，药企/医院注册详情，含 CTR 编号。经 MCP 工具 `chinadrugtrials` 调用，**需本人浏览器会话**；细则见「中国药物临床试验登记平台接入」 |
 | **Veeva CTV** | 全球研究库，可筛 `China`。需启用同一插件且**已建本地索引** |
 | **CDE**（药品审评中心） | IND 受理与审评信息，可反映国内在研方向 |
 | **EU CTR / CTIS、WHO ICTRP** | 补充覆盖 |

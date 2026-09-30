@@ -1,0 +1,19 @@
+{
+  "cookies": "",
+  "keywords": "胰腺癌",
+  "output": "output",
+  "delay": 1.5,
+  "max_pages": null,
+  "max_retries": 3,
+  "incremental": true,
+  "reg_no": "",
+  "indication": "",
+  "case_no": "",
+  "drugs_name": "",
+  "drugs_type": "",
+  "appliers": "",
+  "communities": "",
+  "researchers": "",
+  "agencies": "",
+  "state": ""
+}

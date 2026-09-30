@@ -3,7 +3,7 @@
  *
  * 职责：把**中国与区域临床试验数据源**以 MCP 服务的形式绑定进应用。
  * 边界：本插件自身不读写患者文件、不发网络请求。
- *       - 联网检索由 MCP 服务（chictr / veeva-ctv）在各自进程内完成；
+ *       - 联网检索由 MCP 服务（chictr / veeva-ctv / chinadrugtrials）在各自进程内完成；
  *       - 药品说明书、诊疗规范等由助手按技能文档自行处理。
  *       所以权限只要 ui.view + mcp.server.local，不申请 fs / net.fetch。
  *
@@ -13,10 +13,14 @@
  *   **插件是否启用本身就是用户的授权动作**，不想要本地进程的患者永远不必接受。
  *
  * 前置条件（重要，未满足时对应来源不可用，界面与技能文档都如实标注）：
- *   - chictr    ：首次使用需联网拉取 npm 包 chictr-mcp-server@2.0.2（约数 MB），
- *                 并依赖 Playwright Chromium（约 570MB，缓存在 ~/Library/Caches/ms-playwright）。
- *   - veeva-ctv ：需本机已安装 ctv-mcp-server（`npm link` 或全局安装），
- *                 且**必须先建立本地索引**，否则检索返回 INDEX_EMPTY。
+ *   - chictr          ：首次使用需联网拉取 npm 包 chictr-mcp-server@2.0.2（约数 MB），
+ *                       并依赖 Playwright Chromium（约 570MB，缓存在 ~/Library/Caches/ms-playwright）。
+ *   - veeva-ctv       ：需本机已安装 ctv-mcp-server（`npm link` 或全局安装），
+ *                       且**必须先建立本地索引**，否则检索返回 INDEX_EMPTY。
+ *   - chinadrugtrials ：本插件自带采集器与 MCP 服务，但需要 ①本机 Python 3
+ *                       ②采集器依赖（可由 setup_environment 工具一键准备）
+ *                       ③**本人浏览器会话**（必须在浏览器里正常访问站点后复制 cURL）。
+ *                       数据落在 ~/.xyb-chinadrugtrials/，凭据只在本机、权限 0600。
  */
 
 const DISCLAIMER =
@@ -60,13 +64,20 @@ const SOURCES = [
   {
     id: "chinadrugtrials",
     name: "中国药物临床试验登记与信息公示平台",
-    scope: "中国药物注册临床试验",
-    plugin: "本地采集器（非 MCP）",
-    kind: "本地脚本 + 技能",
+    scope: "中国药物注册临床试验（可按适应症、药物类型、申办方、参加机构等条件筛）",
+    plugin: "xyb.trial-sources",
+    kind: "MCP 服务（本机采集器）",
     ready: null,
-    can: ["高级条件检索", "详情页归档", "RAG JSON 与原始 Word"],
-    need: "需本人浏览器会话 Cookie；在助手会话中按技能文档调用本机脚本",
-    limit: "需授权会话，凭据只留在本机，不进本插件、不入仓库",
+    can: [
+      "关键词与高级条件检索",
+      "按登记号取详情",
+      "详情页原始 HTML 与 RAG JSON 归档",
+      "平台原样 Word 下载",
+      "按正文指纹做增量同步",
+    ],
+    need: "需本人浏览器会话；首次要准备 Python 环境（可在会话里让助手一键准备）",
+    limit:
+      "站点校验浏览器会话，会话由本人维护、工具不绕过验证；逐条抓取较慢；凭据只留在本机，不进本插件、不入仓库",
   },
 ];
 

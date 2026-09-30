@@ -193,6 +193,18 @@ function checkPlugin(dir) {
         } else if (/[\\/]/.test(cmd) && !existsSync(join(dir, cmd))) {
           // 插件内相对可执行文件必须真实存在，否则启动即失败
           errors.push(`mcpServer "${sid}" 声明了插件内命令 ${cmd}，但该文件不存在`);
+        } else if (/[\\/]/.test(cmd) && process.platform !== "win32") {
+          // 宿主是直接 exec 这个文件的。缺执行位会在拉起时 EACCES，
+          // 表现是「插件看着启用了，工具一个都没有」——最难定位的一类。
+          try {
+            if ((statSync(join(dir, cmd)).mode & 0o111) === 0) {
+              errors.push(
+                `mcpServer "${sid}" 的插件内命令 ${cmd} 没有执行位，宿主拉起时会失败（chmod +x）`,
+              );
+            }
+          } catch {
+            // 存在性上面已判定，这里读不到就当不存在处理
+          }
         }
       }
       if (s.args !== undefined && (!Array.isArray(s.args) || s.args.some((a) => typeof a !== "string"))) {

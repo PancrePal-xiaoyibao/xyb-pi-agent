@@ -3,7 +3,7 @@
   "id": "xyb.trial-sources",
   "name": "中国与区域试验来源",
   "version": "0.1.0",
-  "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）与 Veeva CTV。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
+  "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）、Veeva CTV 与中国药物临床试验登记与信息公示平台。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
   "main": "main.js",
   "contributes": {
     "views": [
@@ -19,10 +19,10 @@
       {
         "id": "xyb.trial-sources.list",
         "title": "小胰宝：看看有哪些试验来源",
-        "keywords": ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台"]
+        "keywords": ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台", "药物临床试验登记"]
       }
     ],
-    "skills": ["skills/china-trials.md"],
+    "skills": ["skills/china-trials.md", "skills/china-drug-trials.md"],
     "mcpServers": [
       {
         "id": "chictr",
@@ -36,6 +36,12 @@
         "label": "Veeva CTV（本地索引）",
         "transport": "stdio",
         "command": "ctv-mcp-server"
+      },
+      {
+        "id": "chinadrugtrials",
+        "label": "中国药物临床试验登记与信息公示平台",
+        "transport": "stdio",
+        "command": "./mcp/chinadrugtrials-mcp.mjs"
       }
     ]
   },

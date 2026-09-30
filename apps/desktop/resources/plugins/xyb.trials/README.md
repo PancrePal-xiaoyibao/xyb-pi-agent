@@ -24,10 +24,15 @@
 | `agent.tool.register` | 注册 `xyb_trials_search` 工具供助手调用 | 高 |
 | `agent.prompt.inject` | 加载"临床试验匹配"技能 | 高 |
 | `net.fetch` | 访问已声明白名单域名 | 高 |
-| `notify` | 检索状态提示 | 低 |
 
-`manifest.net.domains` 白名单：`clinicaltrials.gov`、`www.chictr.org.cn`、`chinadrugtrials.org.cn`。
+`manifest.net.domains` 白名单：**仅 `clinicaltrials.gov`**。
 未列入白名单的域名一律访问不到（fail closed）。
+
+> **为什么只有这一个**：本插件只做 ClinicalTrials.gov 直连。
+> 中国来源（ChiCTR、Veeva CTV、中国药物临床试验登记平台）由 `xyb.trial-sources`
+> 插件以 MCP 服务形式承担，各有自己的出网边界，不共用本插件的白名单。
+> 早先版本曾在清单里声明 `chictr.org.cn` / `chinadrugtrials.org.cn` 与一个未实现的
+> `sourceChiCTR` 设置，看起来能查中国注册试验、实际什么都没发生，已删除。
 
 ## 边界（产品红线）
 
@@ -43,6 +48,6 @@ pnpm pi-plugin check apps/desktop/resources/plugins/xyb.trials
 
 ## 后续（不在 MVP）
 
-- ChiCTR 与药物临床试验登记平台的检索适配（当前仅 CT.gov 直连）
+- 本插件自身仍只直连 CT.gov；中国来源已由 `xyb.trial-sources` 以 MCP 服务承担
 - 与 `xyb.records` 联动：档案条件自动带入检索
 - 匹配评分与推理过程可视化
