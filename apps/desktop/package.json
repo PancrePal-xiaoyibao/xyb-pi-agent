@@ -1,6 +1,6 @@
 {
   "name": "@pi-desktop/desktop",
-  "version": "0.15.10",
+  "version": "0.16.0",
   "desktopName": "xiaoyibao.desktop",
   "private": true,
   "description": "小胰宝——面向肿瘤患者及家属的本地优先 AI 工作台",
