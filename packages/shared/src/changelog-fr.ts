@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.0",
+    "date": "2026-09-30",
+    "highlights": [
+      "Nouvelle identité 小胰宝 : accueil, icône et noms d'installeur propres, à la place de PI-Desktop.",
+      "Trois nouveaux plugins patients : 我的资料 regroupe comptes rendus, imagerie et consultations dans une bibliothèque locale, 找试验 recherche des essais selon votre situation, 看进展 suit la recherche sur le cancer du pancréas.",
+      "Sources d'essais chinoises et régionales facultatives — ChiCTR, la plateforme chinoise des essais cliniques de médicaments et Veeva CTV — désactivées par défaut et activables par l'utilisateur.",
+      "Nouveaux sous-agents d'avis multidisciplinaire : chirurgie, oncologie médicale, radiologie, anatomopathologie, intervention, radiothérapie et nutrition, avec les regards psychologique et palliatif.",
+      "Un pack de compétences externe ajoute l'appariement aux essais, la lecture des tendances des marqueurs tumoraux, le classement du dossier médical et le repérage de la détresse psychique.",
+    ],
+  },
+
+  {
     "version": "0.15.10",
     "date": "2026-09-28",
     "highlights": [

@@ -37,7 +37,7 @@
 
 </div>
 
-> **Current release line: 0.15.x (Early Preview).**
+> **Current release line: 0.16.x (Early Preview).**
 
 ---
 

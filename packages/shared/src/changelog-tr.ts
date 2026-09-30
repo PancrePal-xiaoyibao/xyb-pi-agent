@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.0",
+    "date": "2026-09-30",
+    "highlights": [
+      "小胰宝 olarak yeniden markalandı: kendi ana ekranı, kendi simgesi ve PI-Desktop yerine kendi kurulum dosyası adları.",
+      "Üç yeni hasta eklentisi: 我的资料 tetkik raporlarını, görüntüleri ve muayene kayıtlarını yerel bir arşivde toplar, 找试验 kişinin kendi durumuna göre klinik çalışma arar, 看进展 pankreas kanseri araştırmalarını izler.",
+      "İsteğe bağlı Çin ve bölge çalışma kaynakları — ChiCTR, Çin ilaç klinik çalışma kayıt platformu ve Veeva CTV — varsayılan olarak kapalı, kullanıcı açabilir.",
+      "Yeni çok disiplinli ikinci görüş alt ajanları: cerrahi, tıbbi onkoloji, radyoloji, patoloji, girişimsel, radyoterapi ve beslenme; ayrıca psikolojik ve palyatif bakım bakışı.",
+      "Harici bir beceri paketi çalışma eşleştirme, tümör belirteci eğilimi okuma, tıbbi kayıt düzenleme ve psikolojik sıkıntı taraması ekler.",
+    ],
+  },
+
+  {
     "version": "0.15.10",
     "date": "2026-09-28",
     "highlights": [

@@ -30,6 +30,18 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.16.0",
+    date: "2026-09-30",
+    highlights: [
+      "Rebranded as 小胰宝, with its own home experience, icon, and installer names instead of PI-Desktop.",
+      "Three new patient plugins: 我的资料 keeps reports, imaging, and visit records in a local library; 找试验 searches trials against your own situation; 看进展 tracks pancreatic-cancer research.",
+      "Optional Chinese and regional trial sources — ChiCTR, the China drug clinical trial registration platform, and Veeva CTV — off by default and enabled per user.",
+      "Multi-disciplinary second-opinion subagents: surgery, medical oncology, radiology, pathology, intervention, radiotherapy, and nutrition, plus psychological and palliative-care perspectives.",
+      "An external skill pack adds trial matching, tumour-marker trend reading, medical-record organization, and distress screening.",
+    ],
+  },
+
+  {
     version: "0.15.10",
     date: "2026-09-28",
     highlights: [
@@ -859,6 +871,18 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.16.0",
+    date: "2026-09-30",
+    highlights: [
+      "品牌化为小胰宝：首页、图标与安装包名称都换成社区自己的。",
+      "新增三个患者向插件：「我的资料」把检查报告、影像与就诊资料归到本地资料库，「找试验」按自身情况检索临床试验并给出匹配理由，「看进展」跟进胰腺癌药物与研究进展。",
+      "中国与区域试验来源可选启用：中国临床试验注册中心（ChiCTR）、中国药物临床试验登记与信息公示平台、Veeva CTV，默认关闭。",
+      "新增多学科视角子智能体：外科、内科、影像、病理、介入、放疗、营养，并补上心理与安宁疗护视角。",
+      "接入外部技能包：临床试验深度匹配、肿瘤标志物趋势解读、病历整理与心理痛苦筛查。",
+    ],
+  },
+
+  {
     version: "0.15.10",
     date: "2026-09-28",
     highlights: [
@@ -1687,6 +1711,18 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.16.0",
+    date: "2026-09-30",
+    highlights: [
+      "品牌化為小胰寶：首頁、圖示與安裝檔名稱都換成社群自己的。",
+      "新增三個病人向外掛：「我的資料」把檢查報告、影像與就診資料歸到本機資料庫，「找試驗」依自身情況檢索臨床試驗並給出媒合理由，「看進展」追蹤胰臟癌藥物與研究進展。",
+      "中國與區域試驗來源可選啟用：中國臨床試驗註冊中心（ChiCTR）、中國藥物臨床試驗登記與資訊公示平台、Veeva CTV，預設關閉。",
+      "新增多學科視角子智慧代理：外科、內科、影像、病理、介入、放療、營養，並補上心理與安寧緩和視角。",
+      "接入外部技能包：臨床試驗深度媒合、腫瘤標記趨勢解讀、病歷整理與心理痛苦篩檢。",
+    ],
+  },
+
   {
     version: "0.15.10",
     date: "2026-09-28",

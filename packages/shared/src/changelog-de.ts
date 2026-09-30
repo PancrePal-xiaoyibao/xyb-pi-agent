@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.0",
+    "date": "2026-09-30",
+    "highlights": [
+      "Als 小胰宝 neu aufgesetzt: eigene Startseite, eigenes Symbol und eigene Installer-Namen statt PI-Desktop.",
+      "Drei neue Patienten-Plugins: 我的资料 sammelt Befunde, Bildgebung und Arztberichte in einer lokalen Bibliothek, 找试验 sucht Studien passend zur eigenen Situation, 看进展 verfolgt die Forschung zum Pankreaskarzinom.",
+      "Optionale chinesische und regionale Studienquellen — ChiCTR, die chinesische Arzneimittel-Studienplattform und Veeva CTV — standardmäßig aus und pro Nutzer aktivierbar.",
+      "Neue Subagenten für Zweitmeinungen aus mehreren Fachrichtungen: Chirurgie, internistische Onkologie, Radiologie, Pathologie, Intervention, Strahlentherapie und Ernährung, dazu psychologische und palliativmedizinische Sicht.",
+      "Ein externes Skill-Paket ergänzt Studienabgleich, Verlauf von Tumormarkern, Ordnen von Krankenakten und Screening auf psychische Belastung.",
+    ],
+  },
+
+  {
     "version": "0.15.10",
     "date": "2026-09-28",
     "highlights": [
