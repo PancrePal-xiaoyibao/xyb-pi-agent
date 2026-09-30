@@ -266,19 +266,57 @@ test("packaging publishes an electron-updater feed for GitHub Releases", () => {
     ["AppImage", "deb", "rpm"],
     "Linux release targets",
   );
-  // Scoped package name is not a valid deb/rpm package or file name.
-  // Known branding gap: the deb lane was renamed to the fork's name but the rpm
-  // lane was not, so Fedora users still download a `pi-desktop-*.rpm`. Pinned
-  // here so the current (mixed) state is visible instead of silently drifting;
-  // see the release checklist for the follow-up.
+  // Scoped package name is not a valid deb/rpm package or file name, so each
+  // Linux lane names the package after the fork. They are asserted together
+  // because the previous state was mixed: the deb lane had been renamed while
+  // the rpm lane still produced pi-desktop-*.rpm.
   assert.equal(pkg.build.deb.packageName, "xiaoyibao");
-  assert.equal(pkg.build.rpm.packageName, "pi-desktop");
+  assert.equal(pkg.build.rpm.packageName, "xiaoyibao");
   assert.ok(!pkg.build.deb.artifactName.includes("${name}"), "deb artifactName");
   assert.equal(
     pkg.build.rpm.artifactName,
-    "pi-desktop-${version}-${arch}.${ext}",
+    "xiaoyibao-${version}-${arch}.${ext}",
     "rpm artifactName",
   );
+  // AppImage has no target-specific name of its own. Without this it falls back
+  // to electron-builder's `${productName}-${version}-${arch}.${ext}` default,
+  // which drops the architecture for the default x64 target and keeps the CJK
+  // product name: v0.16.0 built `小胰宝-0.16.0.AppImage` beside two siblings
+  // named `xiaoyibao_0.16.0_amd64.deb` and `pi-desktop-0.16.0-x86_64.rpm`.
+  assert.equal(
+    pkg.build.appImage.artifactName,
+    "xiaoyibao-${version}-${arch}.${ext}",
+    "AppImage artifactName",
+  );
+  // The AppImage lane is why this loop exists. electron-builder expands every
+  // pattern, and a result that is not a safe GitHub asset name (ASCII, no `@` or
+  // `/`) makes the updater feed fall back to `${name}-${version}-${arch}.${ext}`
+  // — the scoped npm name — while the file keeps the name it built. The v0.16.0
+  // release therefore carried an AppImage built as `小胰宝-0.16.0.AppImage`
+  // (stored by GitHub as `-0.16.0.AppImage`) next to a `latest-linux.yml`
+  // advertising `@pi-desktop/desktop-0.16.0-x86_64.AppImage`.
+  const artifactPatterns = {
+    mac: pkg.build.mac.artifactName,
+    dmg: pkg.build.dmg.artifactName,
+    win: pkg.build.win.artifactName,
+    nsis: pkg.build.nsis.artifactName,
+    portable: pkg.build.portable.artifactName,
+    deb: pkg.build.deb.artifactName,
+    rpm: pkg.build.rpm.artifactName,
+    appImage: pkg.build.appImage.artifactName,
+  };
+  for (const [lane, pattern] of Object.entries(artifactPatterns)) {
+    assert.ok(
+      typeof pattern === "string" && pattern.length > 0,
+      `${lane} must name its artifacts explicitly`,
+    );
+    assert.match(pattern, /^[\x20-\x7E]+$/, `${lane} artifactName must be ASCII`);
+    assert.doesNotMatch(
+      pattern,
+      /\$\{(?:name|productName)\}/,
+      `${lane} artifactName must not expand from the package or product name`,
+    );
+  }
   assert.deepEqual(
     pkg.build.rpm.fpm,
     ["--rpm-rpmbuild-define", "_build_id_links none"],

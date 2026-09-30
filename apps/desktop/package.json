@@ -4,10 +4,10 @@
   "desktopName": "xiaoyibao.desktop",
   "private": true,
   "description": "小胰宝——面向肿瘤患者及家属的本地优先 AI 工作台",
-  "homepage": "https://github.com/vastsa/PI-Desktop",
+  "homepage": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent",
   "author": {
-    "name": "vastsa",
-    "email": "hhxk666@gmail.com"
+    "name": "sam",
+    "email": "sam.qin@xiaoyibao.com.cn"
   },
   "main": "./out/main/index.js",
   "type": "module",
@@ -247,12 +247,15 @@
       "artifactName": "xiaoyibao_${version}_${arch}.${ext}"
     },
     "rpm": {
-      "packageName": "pi-desktop",
-      "artifactName": "pi-desktop-${version}-${arch}.${ext}",
+      "packageName": "xiaoyibao",
+      "artifactName": "xiaoyibao-${version}-${arch}.${ext}",
       "fpm": [
         "--rpm-rpmbuild-define",
         "_build_id_links none"
       ]
+    },
+    "appImage": {
+      "artifactName": "xiaoyibao-${version}-${arch}.${ext}"
     },
     "linux": {
       "executableName": "pi-desktop",

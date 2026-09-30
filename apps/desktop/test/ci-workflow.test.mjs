@@ -135,12 +135,22 @@ test("manual Linux package validation covers the RPM desktop identity", () => {
   );
   assert.match(linuxPackageWorkflowSource, /rpm -qpl "\$rpm_package"/);
   assert.match(linuxPackageWorkflowSource, /build-id/);
+  // These names come from three different fields in apps/desktop/package.json,
+  // which is why asserting the wrong one kept this green while the job would
+  // have failed: build.productName drives the /opt install root, desktopName
+  // (with linux.syncDesktopName) drives the .desktop file name and
+  // StartupWMClass, and linux.executableName drives Icon=.
+  assert.match(linuxPackageWorkflowSource, /'\/opt\/小胰宝\/resources\/app\.asar'/);
   assert.match(
     linuxPackageWorkflowSource,
-    /usr\/share\/applications\/pi-desktop\.desktop/,
+    /'\/opt\/小胰宝\/resources\/bin\/pi-desktop-host-core'/,
+  );
+  assert.match(
+    linuxPackageWorkflowSource,
+    /usr\/share\/applications\/xiaoyibao\.desktop/,
   );
   assert.match(linuxPackageWorkflowSource, /Icon=pi-desktop/);
-  assert.match(linuxPackageWorkflowSource, /StartupWMClass=pi-desktop/);
+  assert.match(linuxPackageWorkflowSource, /StartupWMClass=xiaoyibao/);
   assert.match(
     linuxPackageWorkflowSource,
     /uses: actions\/upload-artifact@v7[\s\S]*path: apps\/desktop\/release\/\*\.rpm/,

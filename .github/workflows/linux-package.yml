@@ -68,24 +68,33 @@ jobs:
             echo 'RPM must not ship global build-id links for bundled Electron binaries'
             exit 1
           fi
-          grep -Fx '/opt/PI-Desktop/resources/app.asar' "$rpm_file_list" >/dev/null
-          grep -Fx '/opt/PI-Desktop/resources/bin/pi-desktop-host-core' "$rpm_file_list" >/dev/null
-          grep -Fx '/usr/share/applications/pi-desktop.desktop' "$rpm_file_list" >/dev/null
+          # Three different fields in apps/desktop/package.json produce the
+          # paths below, which is why a rebrand keeps breaking this step:
+          #   build.productName -> the /opt install root. electron-builder uses
+          #     installPrefix + sanitizedProductName, so the executable name
+          #     does not move it.
+          #   desktopName, with linux.syncDesktopName -> the .desktop file name
+          #     and StartupWMClass.
+          #   linux.executableName -> the binary, its icon file, and the Icon=
+          #     key, which therefore stay upstream-named on purpose.
+          grep -Fx '/opt/小胰宝/resources/app.asar' "$rpm_file_list" >/dev/null
+          grep -Fx '/opt/小胰宝/resources/bin/pi-desktop-host-core' "$rpm_file_list" >/dev/null
+          grep -Fx '/usr/share/applications/xiaoyibao.desktop' "$rpm_file_list" >/dev/null
           grep -Fx '/usr/share/icons/hicolor/512x512/apps/pi-desktop.png' "$rpm_file_list" >/dev/null
 
           desktop_root=$(mktemp -d)
           (
             cd "$desktop_root"
-            rpm2cpio "$rpm_package" | cpio --quiet -id './usr/share/applications/pi-desktop.desktop'
+            rpm2cpio "$rpm_package" | cpio --quiet -id './usr/share/applications/xiaoyibao.desktop'
           )
-          desktop_entry="$desktop_root/usr/share/applications/pi-desktop.desktop"
+          desktop_entry="$desktop_root/usr/share/applications/xiaoyibao.desktop"
           grep -Fx 'Icon=pi-desktop' "$desktop_entry" >/dev/null
-          grep -Fx 'StartupWMClass=pi-desktop' "$desktop_entry" >/dev/null
+          grep -Fx 'StartupWMClass=xiaoyibao' "$desktop_entry" >/dev/null
 
       - name: Upload RPM package
         uses: actions/upload-artifact@v7
         with:
-          name: pi-desktop-linux-x64-rpm
+          name: xiaoyibao-linux-x64-rpm
           if-no-files-found: error
           retention-days: 7
           path: apps/desktop/release/*.rpm
