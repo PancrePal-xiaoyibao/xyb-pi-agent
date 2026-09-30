@@ -30,6 +30,17 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.16.1",
+    date: "2026-09-30",
+    highlights: [
+      "Linux downloads follow one naming scheme again: the AppImage, deb, and RPM all use the project name and carry their architecture, replacing the mixed names 0.16.0 shipped.",
+      "In-app updates work again for the Linux AppImage: the previous release pointed its update metadata at an AppImage filename that was never published.",
+      "The deb and RPM packages name this project as their maintainer and homepage instead of the upstream author they inherited.",
+      "Release metadata is verified against the files that actually ship, so a release can no longer advertise a download that does not exist.",
+    ],
+  },
+
+  {
     version: "0.16.0",
     date: "2026-09-30",
     highlights: [
@@ -871,6 +882,17 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.16.1",
+    date: "2026-09-30",
+    highlights: [
+      "Linux 下载包统一命名：AppImage、deb、rpm 一律使用项目名并带上架构，替换掉 0.16.0 里混用的名字。",
+      "Linux AppImage 的应用内更新恢复可用：上一个版本把更新信息指向了一个并未发布的文件名。",
+      "deb 与 rpm 包的维护者与主页改为本项目，不再写着继承来的上游作者。",
+      "发布元数据现在会与实际产物核对，不会再对外声明一个不存在的下载。",
+    ],
+  },
+
+  {
     version: "0.16.0",
     date: "2026-09-30",
     highlights: [
@@ -1711,6 +1733,17 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.16.1",
+    date: "2026-09-30",
+    highlights: [
+      "Linux 下載檔統一命名：AppImage、deb、rpm 一律使用專案名稱並帶上架構，取代 0.16.0 混用的名稱。",
+      "Linux AppImage 的應用內更新恢復可用：上一個版本把更新資訊指向了並未發佈的檔名。",
+      "deb 與 rpm 套件的維護者與首頁改為本專案，不再沿用繼承來的上游作者。",
+      "發佈中繼資料現在會與實際產物核對，不會再對外宣告不存在的下載。",
+    ],
+  },
+
   {
     version: "0.16.0",
     date: "2026-09-30",

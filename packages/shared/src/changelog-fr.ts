@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.1",
+    "date": "2026-09-30",
+    "highlights": [
+      "Les téléchargements Linux suivent de nouveau un seul schéma de nommage : AppImage, deb et RPM portent le nom du projet et leur architecture, au lieu des noms mélangés de 0.16.0.",
+      "Les mises à jour intégrées fonctionnent de nouveau pour l'AppImage Linux : la version précédente pointait ses métadonnées vers un nom de fichier AppImage jamais publié.",
+      "Les paquets deb et RPM indiquent ce projet comme responsable et page d'accueil, au lieu de l'auteur d'origine hérité.",
+      "Les métadonnées de version sont vérifiées par rapport aux fichiers réellement publiés : une version ne peut plus annoncer un téléchargement inexistant.",
+    ],
+  },
+
+  {
     "version": "0.16.0",
     "date": "2026-09-30",
     "highlights": [

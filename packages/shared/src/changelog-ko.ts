@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.1",
+    "date": "2026-09-30",
+    "highlights": [
+      "Linux 다운로드 이름이 다시 하나로 통일되었습니다: AppImage, deb, RPM 모두 프로젝트 이름과 아키텍처를 사용하며, 0.16.0의 뒤섞인 이름은 쓰지 않습니다.",
+      "Linux AppImage의 앱 내 업데이트가 다시 동작합니다: 이전 버전은 게시된 적 없는 AppImage 파일 이름을 업데이트 정보에 적어 두었습니다.",
+      "deb와 RPM 패키지가 물려받았던 상위 프로젝트 작성자 대신 이 프로젝트를 유지관리자와 홈페이지로 표시합니다.",
+      "릴리스 메타데이터를 실제로 배포되는 파일과 대조하므로, 존재하지 않는 다운로드를 알릴 수 없습니다.",
+    ],
+  },
+
+  {
     "version": "0.16.0",
     "date": "2026-09-30",
     "highlights": [

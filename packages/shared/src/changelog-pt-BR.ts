@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.16.1",
+    "date": "2026-09-30",
+    "highlights": [
+      "Os downloads para Linux voltaram a seguir um único padrão de nomes: AppImage, deb e RPM usam o nome do projeto e a arquitetura, em vez dos nomes mistos da 0.16.0.",
+      "As atualizações dentro do aplicativo voltaram a funcionar no AppImage para Linux: a versão anterior apontava os metadados de atualização para um nome de arquivo AppImage que nunca foi publicado.",
+      "Os pacotes deb e RPM agora indicam este projeto como mantenedor e página inicial, em vez do autor original herdado.",
+      "Os metadados da versão são conferidos com os arquivos realmente publicados, então uma versão não pode mais anunciar um download inexistente.",
+    ],
+  },
+
+  {
     "version": "0.16.0",
     "date": "2026-09-30",
     "highlights": [

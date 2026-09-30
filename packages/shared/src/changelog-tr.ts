@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.1",
+    "date": "2026-09-30",
+    "highlights": [
+      "Linux indirmeleri yeniden tek bir adlandırma düzeni kullanıyor: AppImage, deb ve RPM dosyaları proje adını ve mimarisini taşıyor; 0.16.0'daki karışık adlar kullanılmıyor.",
+      "Linux AppImage için uygulama içi güncellemeler yeniden çalışıyor: önceki sürüm, güncelleme bilgisini hiç yayımlanmamış bir AppImage dosya adına yönlendiriyordu.",
+      "deb ve RPM paketleri artık devraldıkları üst kaynak yazarı yerine bu projeyi bakımcı ve ana sayfa olarak gösteriyor.",
+      "Sürüm üst verisi gerçekten yayımlanan dosyalarla karşılaştırılıyor; böylece bir sürüm var olmayan bir indirmeyi duyuramaz.",
+    ],
+  },
+
+  {
     "version": "0.16.0",
     "date": "2026-09-30",
     "highlights": [

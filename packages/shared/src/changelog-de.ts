@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.16.1",
+    "date": "2026-09-30",
+    "highlights": [
+      "Linux-Downloads folgen wieder einem einheitlichen Namensschema: AppImage, deb und RPM tragen den Projektnamen und ihre Architektur statt der gemischten Namen aus 0.16.0.",
+      "In-App-Updates funktionieren für das Linux-AppImage wieder: Die vorige Version verwies in ihren Update-Angaben auf einen AppImage-Dateinamen, der nie veröffentlicht wurde.",
+      "Die deb- und RPM-Pakete nennen dieses Projekt als Maintainer und Homepage statt des übernommenen Upstream-Autors.",
+      "Die Release-Angaben werden gegen die tatsächlich veröffentlichten Dateien geprüft, sodass ein Release keinen nicht existierenden Download ankündigen kann.",
+    ],
+  },
+
+  {
     "version": "0.16.0",
     "date": "2026-09-30",
     "highlights": [
