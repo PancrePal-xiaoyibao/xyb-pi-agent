@@ -91,6 +91,98 @@
 
 ---
 
+## 能力说明书
+
+上面三块是**开箱可用**的。小胰宝一共装了 **8 个插件、17 个技能、3 个本机数据源服务**，
+下面逐条写清「能做什么、什么时候用、需要先准备什么、来自哪里」。
+
+### 一、开箱可用（无需任何配置）
+
+| 面板 | 插件 | 能做什么 | 什么时候用 |
+|---|---|---|---|
+| 我的资料 | `xyb.records` | 把病理、影像、化验报告归集到本地文件夹，生成白话摘要 | 报告散落各处，想理成一册 |
+| 找试验 | `xyb.trials` | 检索 ClinicalTrials.gov，按治疗线数、用过的药、标志物匹配 | 想看看有什么在招的试验 |
+| 看进展 | `xyb.news` | 汇集近期药物与研究条目，只列标题、来源、日期 | 想知道最近有什么新东西 |
+| 智能助手 | `xyb.assistants` | 9 个患者向助手技能（见下一节） | 见下表 |
+| 文件管理器 / 浏览器 | `pi.file-manager` `pi.browser` | 工作台自带的文件与网页工具 | 要看本地文件或查网页 |
+
+### 二、智能助手：9 个患者向技能
+
+| 技能 | 什么时候用 |
+|---|---|
+| 病历助手 | 拿到病理报告、出院小结，想搞懂上面写了什么 |
+| 影像助手 | 看 CT / MRI / PET 报告，想理解描述与结论 |
+| 基因解读助手 | 拿到 NGS 报告，想知道突变意味着什么、有没有对应方向 |
+| 病理助手 | 看免疫组化、分子病理指标 |
+| 决策辅助助手 | 在几个方案之间比，想要一张清晰的权衡表 |
+| 营养支持助手 | 吃不下、体重掉，想知道怎么吃 |
+| 心理支持助手 | 情绪难熬，想找个人把话理一理 |
+| 并发症助手 | 出现疼痛、黄疸、腹水等情况，想了解怎么回事 |
+| MDT 视角会诊准备 | 复诊前想按多学科角度把材料理一遍 |
+
+> 这些助手只做**结构化整理与解释**：不诊断、不建议用药、不评价医院或医生。
+> 每个技能都是一份 Markdown 文档，你可以直接读、改，或换成自己的。
+
+### 三、中国与区域试验来源（需显式启用）
+
+这个插件要**单独授权**：它声明了 `mcp.server.local`，也就是允许拉起本机进程。
+不想要本地进程的可以一直不启用，前面几块不受影响。
+
+| 数据源 | 覆盖 | 场景 | 需要先准备 |
+|---|---|---|---|
+| ChiCTR 中国临床试验注册中心 | 中国注册试验（含研究者发起的 IIT） | 找只在境内注册、未上 ClinicalTrials.gov 的试验 | 首次联网拉取 npm 包；依赖 Playwright Chromium（约 570MB） |
+| Veeva CTV | 全球研究库，可筛 China | 想看跨国药企的全球研究布局 | 本机需已安装 `ctv-mcp-server`，且**必须先建本地索引** |
+| 中国药物临床试验登记与信息公示平台 | 中国药物注册试验 | 查 CTR 编号、国内药物注册试验详情 | 需 Python 3（助手可一键准备依赖）；**必须由本人从浏览器提供会话** |
+
+> 站点的验证码与反爬一律不绕过。会话过期就如实说查不到，让人工重新提供。
+> 拿不到来源时明说「这一处没查到」，不用别的来源顶上。
+
+### 四、外部接入技能（来自 opencare-skillhub）
+
+这 4 个不是小胰宝自研，装在 `xyb.skillpack` 里。**启用插件即可用**，不需要额外配置。
+
+| 技能 | 能做什么 | 可用程度 |
+|---|---|---|
+| 试验匹配进阶版 | 8 维搜索计划、双源检索、入排逐条比对、R1–R5 规则、0 匹配替代策略 | 可完整使用 |
+| 病案整理 | 六步流程 + 11 类分类体系 + 时间线 + 信息缺口提示 | 方法论层（需本机 OCR / 转写工具） |
+| 焦虑抑郁量表评估 | HADS 焦虑与抑郁两维筛查、分级与转介建议、自伤危机处理 | 可完整使用（全程本机） |
+| 肿瘤标志物趋势 | CA19-9 / CEA / AFP 等历次数值整理成趋势表与解读边界 | 方法论层（上游需 `xyb` CLI） |
+
+**「可用程度」是诚实标注**：标「方法论层」的，表示它在本机只能提供流程与方法；
+需要外接工具的那一步会如实说明暂不具备，**不会假装已经跑完**。
+
+### 五、依赖总览：什么会拦住你
+
+| 依赖 | 影响 | 怎么准备 |
+|---|---|---|
+| 无 | 我的资料 / 找试验 / 看进展 / 智能助手 / 外部技能 | 开箱可用 |
+| 启用 `xyb.trial-sources` | 三个中国数据源 | 在插件页显式启用（即授予本地进程权限） |
+| 联网 + Playwright Chromium（约 570MB） | ChiCTR 检索 | 首次使用时拉取 |
+| 本机 `ctv-mcp-server` + 本地索引 | Veeva CTV 检索 | 需自行安装并建索引，否则返回 `INDEX_EMPTY`（不是「没有相关研究」） |
+| Python 3 | 中国药物临床试验登记平台 | 助手可代劳依赖安装；**Python 本体需自行安装** |
+| 本人浏览器会话 | 同上 | 对站内搜索请求「复制为 cURL」交给助手保存；过期需重新提供 |
+
+> 抓取类是**逐条**进行的（每条约 1.5 秒间隔），条数多时是分钟级，不是查缓存。
+
+### 六、原项目与来源
+
+| 部分 | 来源 |
+|---|---|
+| 上游底座 | [vastsa/PI-Desktop](https://github.com/vastsa/PI-Desktop)（LGPL-3.0） |
+| 小胰宝定制 | [PancrePal-xiaoyibao/xyb-pi-agent](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent) |
+| ChiCTR MCP 服务 | [chictr-mcp-server](https://www.npmjs.com/package/chictr-mcp-server)（Apache-2.0） |
+| 中国药物临床试验登记采集器 | [PancrePal-xiaoyibao/chinadrugtrials-collector](https://github.com/PancrePal-xiaoyibao/chinadrugtrials-collector) |
+| 试验匹配进阶版 | [opencare-skillhub/clinical-trial-matching](https://github.com/opencare-skillhub/clinical-trial-matching) |
+| 病案整理 | [opencare-skillhub/Medical-Record-Organizer](https://github.com/opencare-skillhub/Medical-Record-Organizer) |
+| 焦虑抑郁量表评估 | [opencare-skillhub/skill-HADS-accessment](https://github.com/opencare-skillhub/skill-HADS-accessment) |
+| 肿瘤标志物趋势 | [opencare-skillhub/graphify-xiaoyibao](https://github.com/opencare-skillhub/graphify-xiaoyibao)（**AGPL-3.0**） |
+| Veeva CTV 服务 | 未发布 npm，需本机自备 |
+
+外部技能的许可以各自仓库为准。其中 `graphify-xiaoyibao` 是 AGPL-3.0（强 copyleft），
+小胰宝内是独立改写、未内联其代码；若日后转为公开分发，需按 AGPL 处理。
+
+---
+
 ## 为什么是 PI-Desktop？
 
 终端 Agent 擅长执行，IDE Agent 擅长嵌入编辑器。

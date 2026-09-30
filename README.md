@@ -92,6 +92,105 @@ Each of these is a **skill**: a plain Markdown document the agent loads on deman
 
 ---
 
+## Capability guide
+
+The three above work out of the box. 小胰宝 ships **8 plugins, 17 skills and 3 local data-source services**
+in total — here is what each one does, when to use it, what it needs, and where it comes from.
+
+### 1. Works out of the box
+
+| Panel | Plugin | What it does | When to use it |
+|---|---|---|---|
+| My Records | `xyb.records` | Collects pathology, imaging and lab reports into a local folder and writes a plain-language summary | Reports are scattered and you want them in one place |
+| Find Trials | `xyb.trials` | Searches ClinicalTrials.gov against treatment line, prior drugs and biomarkers | You want to see what is currently recruiting |
+| Track Progress | `xyb.news` | Gathers recent drug and research entries — title, source, date only | You want to know what changed lately |
+| Assistants | `xyb.assistants` | 9 patient-facing assistant skills (next section) | See the table below |
+| File Manager / Browser | `pi.file-manager` `pi.browser` | The workspace's built-in file and web tools | You need to inspect local files or look something up |
+
+### 2. Assistants: 9 patient-facing skills
+
+| Skill | When to use it |
+|---|---|
+| Medical record | You have a pathology report or discharge summary and want to understand it |
+| Imaging | You are reading a CT / MRI / PET report and want the wording explained |
+| Genomics | You have an NGS report and want to know what the variants imply |
+| Pathology | You want the IHC and molecular pathology markers explained |
+| Decision support | You are weighing several options and want a clear trade-off table |
+| Nutrition | Appetite is poor or weight is dropping |
+| Psychological support | Things are hard and you want to sort out what you feel |
+| Complications | Pain, jaundice, ascites — you want to understand what is happening |
+| MDT round prep | You want to organise your material from a multidisciplinary angle before a visit |
+
+> These assistants **structure and explain** — they do not diagnose, do not recommend drugs,
+> and do not rank hospitals or doctors. Each one is a plain Markdown document you can read,
+> edit, or replace with your own.
+
+### 3. China & regional trial sources (opt-in)
+
+This plugin asks for a **separate grant**: it declares `mcp.server.local`, which allows it to
+launch local processes. If you would rather not, leave it disabled — nothing above is affected.
+
+| Source | Coverage | When to use it | What it needs first |
+|---|---|---|---|
+| ChiCTR | Trials registered in China (including investigator-initiated) | Trials that only exist in the Chinese registry | First run pulls an npm package; depends on Playwright Chromium (~570 MB) |
+| Veeva CTV | Global study library, filterable to China | Seeing how multinational sponsors lay out their global studies | `ctv-mcp-server` must be installed locally **and a local index must be built first** |
+| China Drug Trials Registry | Drug trials registered in China | CTR numbers and Chinese registration details | Python 3 (the agent can install the dependencies), plus **a session you provide from your own browser** |
+
+> CAPTCHAs and anti-scraping measures are never bypassed. When a session expires we say so
+> instead of guessing, and ask you to provide a fresh one.
+> If a source is unreachable, we say "this one could not be reached" rather than
+> substituting results from another source.
+
+### 4. External skills (from opencare-skillhub)
+
+These 4 are not built in-house; they live in `xyb.skillpack`. **Enabling the plugin is all it takes** —
+no further configuration.
+
+| Skill | What it does | Readiness |
+|---|---|---|
+| Advanced trial matching | 8-dimension search plan, dual-source retrieval, line-by-line eligibility, R1–R5 rules, alternatives when nothing matches | Fully usable |
+| Record organiser | 6-step workflow, 11-category taxonomy, timeline, gap detection | Methodology layer (needs local OCR / transcription tools) |
+| Distress screening | HADS anxiety and depression screening, grading and referral guidance, self-harm crisis handling | Fully usable (entirely local) |
+| Tumour marker trends | Organises CA19-9 / CEA / AFP history into a trend table, with interpretation boundaries | Methodology layer (upstream needs the `xyb` CLI) |
+
+**"Readiness" is an honest label.** Where it says "methodology layer", the skill provides the
+process and the method; if a step needs a tool this machine does not have, the agent says so
+plainly rather than pretending the work was done.
+
+### 5. Dependencies: what can block you
+
+| Dependency | Affects | How to get it |
+|---|---|---|
+| None | My Records / Find Trials / Track Progress / Assistants / External skills | Works out of the box |
+| Enabling `xyb.trial-sources` | The three China sources | Enable it in the plugin page (this grants the local-process permission) |
+| Network + Playwright Chromium (~570 MB) | ChiCTR search | Fetched on first use |
+| Local `ctv-mcp-server` + a built index | Veeva CTV search | Install it yourself and build the index, otherwise you get `INDEX_EMPTY` (which is not the same as "no matching studies") |
+| Python 3 | China Drug Trials Registry | The agent can install the dependencies; **Python itself is on you** |
+| Your own browser session | Same as above | Copy the in-site search request as cURL and hand it to the agent; you will need to refresh it when it expires |
+
+> Scraping runs **record by record** (about 1.5 s apart). With many records it takes minutes —
+> this is not a cache lookup.
+
+### 6. Upstream & sources
+
+| Part | Source |
+|---|---|
+| Upstream foundation | [vastsa/PI-Desktop](https://github.com/vastsa/PI-Desktop) (LGPL-3.0) |
+| 小胰宝 customisation | [PancrePal-xiaoyibao/xyb-pi-agent](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent) |
+| ChiCTR MCP server | [chictr-mcp-server](https://www.npmjs.com/package/chictr-mcp-server) (Apache-2.0) |
+| China Drug Trials collector | [PancrePal-xiaoyibao/chinadrugtrials-collector](https://github.com/PancrePal-xiaoyibao/chinadrugtrials-collector) |
+| Advanced trial matching | [opencare-skillhub/clinical-trial-matching](https://github.com/opencare-skillhub/clinical-trial-matching) |
+| Record organiser | [opencare-skillhub/Medical-Record-Organizer](https://github.com/opencare-skillhub/Medical-Record-Organizer) |
+| Distress screening | [opencare-skillhub/skill-HADS-accessment](https://github.com/opencare-skillhub/skill-HADS-accessment) |
+| Tumour marker trends | [opencare-skillhub/graphify-xiaoyibao](https://github.com/opencare-skillhub/graphify-xiaoyibao) (**AGPL-3.0**) |
+| Veeva CTV service | Not published to npm; bring your own local copy |
+
+External skills are governed by their own repositories' licences. `graphify-xiaoyibao` is
+AGPL-3.0 (strong copyleft); the skill here is an independent rewrite with no upstream code
+inlined — if the project is ever publicly distributed, AGPL terms will apply.
+
+---
+
 ## Why PI-Desktop?
 
 Terminal agents are great at execution. IDE agents are great at living inside an editor.
