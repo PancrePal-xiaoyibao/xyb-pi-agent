@@ -1,0 +1,30 @@
+<svg viewBox="0 0 680 336" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">
+  <title>病友家属的四种问法分别落到哪一层</title>
+  <desc>家属说的是生活语言，落到系统里分两件事：用哪个技能定方法，动不动执行层去取数据。</desc>
+
+  <rect x="0" y="0" width="680" height="336" fill="#FFFFFF"/>
+
+  <text x="56" y="52" fill="#8B9A97" font-size="12" dominant-baseline="central">家属说的话</text>
+  <text x="294" y="52" fill="#8B9A97" font-size="12" dominant-baseline="central">用到的技能</text>
+  <text x="472" y="52" fill="#8B9A97" font-size="12" dominant-baseline="central">要动的东西</text>
+
+  <rect x="40" y="68" width="600" height="56" rx="10" fill="#F8FAFA" stroke="#DCE7E3" stroke-width="1"/>
+  <text x="56" y="96" fill="#213139" font-size="13" dominant-baseline="central">一堆报告，不知道从哪看起</text>
+  <text x="294" y="96" fill="#213139" font-size="13" dominant-baseline="central">病案整理</text>
+  <text x="472" y="96" fill="#185FA5" font-size="13" dominant-baseline="central">插件自身的文件权限</text>
+
+  <rect x="40" y="132" width="600" height="56" rx="10" fill="#F8FAFA" stroke="#DCE7E3" stroke-width="1"/>
+  <text x="56" y="160" fill="#213139" font-size="13" dominant-baseline="central">B7-H3 新药，国内能进组吗</text>
+  <text x="294" y="160" fill="#213139" font-size="13" dominant-baseline="central">试验匹配进阶版</text>
+  <text x="472" y="160" fill="#0F6E56" font-size="13" dominant-baseline="central">内联工具 + 3 个 MCP</text>
+
+  <rect x="40" y="196" width="600" height="56" rx="10" fill="#F8FAFA" stroke="#DCE7E3" stroke-width="1"/>
+  <text x="56" y="224" fill="#213139" font-size="13" dominant-baseline="central">他睡不着，问什么都不说</text>
+  <text x="294" y="224" fill="#213139" font-size="13" dominant-baseline="central">焦虑抑郁量表评估</text>
+  <text x="472" y="224" fill="#8B9A97" font-size="13" dominant-baseline="central">什么都不用动</text>
+
+  <rect x="40" y="260" width="600" height="56" rx="10" fill="#F8FAFA" stroke="#DCE7E3" stroke-width="1"/>
+  <text x="56" y="288" fill="#213139" font-size="13" dominant-baseline="central">复诊前想把治疗经过理一遍</text>
+  <text x="294" y="288" fill="#213139" font-size="13" dominant-baseline="central">MDT 视角会诊准备</text>
+  <text x="472" y="288" fill="#8B9A97" font-size="13" dominant-baseline="central">什么都不用动</text>
+</svg>
