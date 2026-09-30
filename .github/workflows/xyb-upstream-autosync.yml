@@ -1,0 +1,383 @@
+name: XYB upstream autosync
+
+# 自动把上游 vastsa/PI-Desktop 的新提交合进 main，让主程序持续跟随上游；
+# 社区定制层（插件 / 技能 / 子智能体 / 品牌）由守卫保证逐字节不变；**不发版**。
+#
+# 为什么可以无人值守，以及为什么安全：
+#   1. 只在全部检查通过后才把结果推到 main。检查不过就什么都不推，
+#      main 永远看不到失败状态（分支是暂存的，失败即丢弃）。
+#   2. 合并前先证明「定制层没被碰」——scripts/xyb-guard-custom-layer.sh
+#      用两条独立判据校验，任一不符即中止。
+#   3. 冲突只在「仅限 i18n 品牌词」时自动解；其它冲突一律放弃并开 issue。
+#   4. 推 main 前确认 origin/main 没被别人推进过，避免覆盖他人工作。
+#   5. 不推 tag、不碰 publish → 不会触发 release.yml，DMG 仍然手工做。
+#
+# on.push 到 main 会触发上游的 ci.yml（这是想要的，等于合并后再验一遍），
+# 但 release.yml 只在 tag 上触发，所以不会自动发版。
+
+on:
+  schedule:
+    # 每周一 09:00（北京时间）= 01:00 UTC。上游很活跃，想更勤可加一条 cron。
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '同步目标：upstream/main 或某个上游 tag（如 v0.15.8）'
+        required: false
+        default: 'upstream/main'
+      mode:
+        description: '模式：auto-merge=验证通过后直接推进 main；pr=只开 PR 等人工合'
+        type: choice
+        options: [auto-merge, pr]
+        default: auto-merge
+      run_tests:
+        description: '跑完整 JS 测试与类型检查（更慢但更可信）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: xyb-upstream-autosync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: 准备 git 身份与上游远端
+        run: |
+          git config user.name  "xyb-upstream-autosync[bot]"
+          git config user.email "xyb-upstream-autosync@users.noreply.github.com"
+          git remote add upstream https://github.com/vastsa/PI-Desktop.git 2>/dev/null \
+            || git remote set-url upstream https://github.com/vastsa/PI-Desktop.git
+          git fetch upstream --tags --prune
+
+      - name: 体检：目标 / 领先数 / 运行参数
+        id: probe
+        env:
+          TARGET_INPUT: ${{ inputs.target }}
+          MODE_INPUT: ${{ inputs.mode }}
+          RUN_TESTS_INPUT: ${{ inputs.run_tests }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          TARGET="${TARGET_INPUT:-upstream/main}"
+          if ! git rev-parse --verify --quiet "${TARGET}^{commit}" >/dev/null; then
+            echo "::error::找不到同步目标 ${TARGET}"
+            exit 1
+          fi
+
+          TARGET_SHA="$(git rev-parse --short "${TARGET}^{commit}")"
+          BEHIND="$(git rev-list --count "HEAD..${TARGET}")"
+          AHEAD="$(git rev-list --count "${TARGET}..HEAD")"
+          BASE="$(git merge-base HEAD "${TARGET}")"
+
+          # 定时触发时 inputs 为空：默认 auto-merge + 跑测试
+          MODE="${MODE_INPUT:-auto-merge}"
+          RUN_TESTS="${RUN_TESTS_INPUT:-true}"
+          if [ "${EVENT_NAME}" = "schedule" ]; then
+            MODE=auto-merge
+            RUN_TESTS=true
+          fi
+
+          {
+            echo "target=${TARGET}"
+            echo "target_sha=${TARGET_SHA}"
+            echo "behind=${BEHIND}"
+            echo "ahead=${AHEAD}"
+            echo "base=${BASE:0:7}"
+            echo "mode=${MODE}"
+            echo "run_tests=${RUN_TESTS}"
+            echo "origin_main=$(git rev-parse origin/main)"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "目标 ${TARGET}（${TARGET_SHA}）：上游领先 ${BEHIND}，我们领先 ${AHEAD}"
+          echo "模式 ${MODE}，跑测试 ${RUN_TESTS}"
+
+      - name: 已是最新
+        if: steps.probe.outputs.behind == '0'
+        run: echo "已与 ${{ steps.probe.outputs.target }} 同步，无需操作。"
+
+      - name: 合并上游（冲突只自动解 i18n 品牌词）
+        id: merge
+        if: steps.probe.outputs.behind != '0'
+        env:
+          TARGET: ${{ steps.probe.outputs.target }}
+          BEHIND: ${{ steps.probe.outputs.behind }}
+        run: |
+          set -uo pipefail
+          git checkout -B xyb/upstream-merge main
+
+          # 提交信息写进文件再传给 git：YAML 块里直接写多行字符串需要严格缩进，
+          # 一旦某行顶格就会破坏整个 workflow 的解析（已踩过）。
+          MSG="$(mktemp)"
+          {
+            echo "Merge ${TARGET} into main (自动同步)"
+            echo
+            echo "并入上游 $(git rev-parse --short "${TARGET}^{commit}") 及其之前 ${BEHIND} 个提交。"
+            echo "定制层由 scripts/xyb-guard-custom-layer.sh 校验未被触碰。"
+          } > "${MSG}"
+
+          if git merge --no-ff -F "${MSG}" "${TARGET}^{commit}"; then
+            echo "state=merged" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CONFLICTED="$(git diff --name-only --diff-filter=U)"
+          echo "冲突文件："
+          printf '%s\n' "${CONFLICTED}"
+          OTHERS="$(printf '%s\n' "${CONFLICTED}" | grep -v '^packages/i18n/src/locales/' || true)"
+
+          if [ -n "${OTHERS}" ]; then
+            git merge --abort
+            printf '%s\n' "${CONFLICTED}" > /tmp/conflicts.txt
+            echo "state=conflict" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 仅 i18n：整体取上游文案，再按规则重放品牌词（纯机械，不猜语义）
+          for f in ${CONFLICTED}; do git checkout --theirs -- "${f}"; git add "${f}"; done
+          python3 -m pip install --quiet pillow
+          python3 scripts/xyb-apply-brand-strings.py --fix-apphelp
+          git add packages/i18n
+          git commit -q --no-edit
+          echo "state=merged" >> "$GITHUB_OUTPUT"
+
+      - name: 合并后品牌归一
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          # 品牌资产在上游也拥有的路径上，合并可能覆盖 → 从母版确定性重建（幂等）
+          python3 scripts/xyb-restore-brand.py
+          python3 scripts/xyb-apply-brand-strings.py --fix-apphelp
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -q -m "chore(fork): 合并后品牌归一（资产重建 + i18n 品牌词重放）"
+            echo "已提交品牌归一"
+          else
+            echo "品牌资产与文案无需归一"
+          fi
+
+      - name: 守卫 · 定制层未被触碰
+        id: guard
+        if: steps.merge.outputs.state == 'merged'
+        env:
+          TARGET: ${{ steps.probe.outputs.target }}
+        run: |
+          set -euo pipefail
+          bash scripts/xyb-guard-custom-layer.sh \
+            "${TARGET}" "${{ steps.probe.outputs.origin_main }}" HEAD \
+            | tee /tmp/guard.txt
+
+      - name: 依赖与编译
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm build:js
+
+      - name: JS 测试与类型检查
+        if: steps.merge.outputs.state == 'merged' && steps.probe.outputs.run_tests == 'true'
+        run: |
+          set -euo pipefail
+          pnpm -r --if-present run typecheck
+          pnpm -r --if-present run test
+
+      - name: Rust host-core（仅当上游动了 crates/）
+        id: rust
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          if git diff --quiet "${{ steps.probe.outputs.base }}" HEAD -- crates/ Cargo.toml Cargo.lock; then
+            echo "上游未改动 Rust 侧，跳过"
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain stable
+          . "$HOME/.cargo/env"
+          cargo test -p host-core --locked
+          cargo build -p host-core
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+
+      - name: fork 门禁
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          node scripts/xyb-check-plugins.mjs
+          node scripts/xyb-check-subagents.mjs
+          python3 scripts/xyb-apply-brand-strings.py --check
+          python3 scripts/xyb-restore-brand.py --check
+
+      - name: 推进 main（auto-merge 模式）
+        id: push
+        if: steps.merge.outputs.state == 'merged' && steps.probe.outputs.mode == 'auto-merge'
+        env:
+          PREV_ORIGIN: ${{ steps.probe.outputs.origin_main }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          NOW_ORIGIN="$(git rev-parse origin/main)"
+          if [ "${NOW_ORIGIN}" != "${PREV_ORIGIN}" ]; then
+            echo "::error::origin/main 在此期间被推进（${PREV_ORIGIN:0:7} → ${NOW_ORIGIN:0:7}），为避免覆盖他人工作，本次不推送。"
+            exit 1
+          fi
+          git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: 开或更新 PR（pr 模式）
+        if: steps.merge.outputs.state == 'merged' && steps.probe.outputs.mode == 'pr'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.probe.outputs.target }}
+          TARGET_SHA: ${{ steps.probe.outputs.target_sha }}
+          BEHIND: ${{ steps.probe.outputs.behind }}
+        run: |
+          set -euo pipefail
+          git push -u origin xyb/upstream-merge --force-with-lease
+
+          {
+            echo "自动同步 \`${TARGET}\`（\`${TARGET_SHA}\`，${BEHIND} 个提交），**已验证**。"
+            echo
+            echo "### 已通过"
+            echo
+            echo "- 定制层守卫：插件 / 技能 / 子智能体 / 品牌母版 / 本 fork 脚本均未被触碰"
+            echo "- \`pnpm install --frozen-lockfile\` + \`pnpm build:js\`"
+            echo "- fork 门禁：插件清单 / 子智能体定义 / 品牌资产 / 品牌文案"
+            echo
+            echo "### 上游提交（最多 20 条）"
+            echo
+            echo '```'
+            git log --format='%h  %ad  %s' --date=format:'%m-%d' \
+              "${{ steps.probe.outputs.base }}..$(git rev-parse ${TARGET}^{commit})" | head -20
+            echo '```'
+            echo
+            echo "### 合并到本地复核"
+            echo
+            echo '```bash'
+            echo "git fetch origin xyb/upstream-merge && git checkout xyb/upstream-merge"
+            echo "bash scripts/xyb-dev.sh   # 起来点一遍：插件加载 / 右侧面板三个视图 / 助手工具"
+            echo '```'
+            echo
+            echo "**编译通过不等于功能没坏**：上游改动若落在 \`apps/desktop/electron/**\` 或"
+            echo "\`packages/plugin-sdk/**\`，必须确认插件加载、右侧工作面板视图、助手工具调用三项仍正常。"
+          } > /tmp/pr-body.md
+
+          EXISTING="$(gh pr list --head xyb/upstream-merge --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${EXISTING}" ]; then
+            gh pr edit "${EXISTING}" --body-file /tmp/pr-body.md
+            echo "已更新 PR #${EXISTING}"
+          else
+            gh pr create --base main --head xyb/upstream-merge \
+              --title "chore(fork): 同步上游 ${TARGET_SHA}（${BEHIND} 个提交）" \
+              --body-file /tmp/pr-body.md
+          fi
+
+      - name: 写审计记录（Step Summary）
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          {
+            echo "## 上游自动同步"
+            echo
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 目标 | \`${{ steps.probe.outputs.target }}\` (\`${{ steps.probe.outputs.target_sha }}\`) |"
+            echo "| 并入提交 | ${{ steps.probe.outputs.behind }} |"
+            echo "| 模式 | ${{ steps.probe.outputs.mode }} |"
+            echo "| 结果 | ${{ steps.push.outputs.pushed == 'true' && '已推进 main' || '见日志（PR 模式或未推送）' }} |"
+            echo "| Rust 侧 | ${{ steps.rust.outputs.ran == 'true' && '已编译并测试' || '未改动，跳过' }} |"
+            echo
+            echo "### 定制层守卫输出"
+            echo
+            echo '```'
+            cat /tmp/guard.txt
+            echo '```'
+            echo
+            echo "### 本次是否影响发版"
+            echo
+            echo "不会。本流程不推 tag、不调用 publish，DMG 仍由你手工出。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 冲突需人工处理 → 开 issue
+        if: steps.merge.outputs.state == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.probe.outputs.target }}
+          TARGET_SHA: ${{ steps.probe.outputs.target_sha }}
+          BEHIND: ${{ steps.probe.outputs.behind }}
+        run: |
+          set -euo pipefail
+          TITLE="上游自动同步遇到冲突，需人工处理"
+          {
+            echo "本轮巡检（$(date -u '+%Y-%m-%d %H:%M UTC')）"
+            echo
+            echo "把 \`${TARGET}\`（\`${TARGET_SHA}\`，${BEHIND} 个提交）合进 main 时出现冲突，"
+            echo "**不只是 i18n 品牌词**，自动流程按设计放弃，main 未被改动。"
+            echo
+            echo "### 冲突文件"
+            echo
+            echo '```'
+            cat /tmp/conflicts.txt
+            echo '```'
+            echo
+            echo "### 本地处理"
+            echo
+            echo '```bash'
+            echo "bash scripts/xyb-sync-upstream.sh            # 先体检"
+            echo "bash scripts/xyb-sync-upstream.sh --merge    # 再合并，按提示解冲突"
+            echo '```'
+            echo
+            echo "解冲突原则：**不要猜**。品牌相关（\`packages/i18n/**\`、\`assets/**\`、\`docs/image/**\`）"
+            echo "保留本 fork；核心逻辑以**上游为准**，再把定制重新贴回去。"
+          } > /tmp/issue-body.md
+          bash .github/scripts/upsert-issue.sh "${TITLE}" /tmp/issue-body.md
+
+      - name: 验证失败 → 开 issue
+        if: failure() && steps.merge.outputs.state == 'merged'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.probe.outputs.target }}
+          TARGET_SHA: ${{ steps.probe.outputs.target_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="上游自动同步验证失败，未推进 main"
+          {
+            echo "本轮巡检（$(date -u '+%Y-%m-%d %H:%M UTC')）"
+            echo
+            echo "合并 \`${TARGET}\`（\`${TARGET_SHA}\`）后**验证未通过**，因此 main 未被改动。"
+            echo
+            echo "运行日志：${RUN_URL}"
+            echo
+            echo "常见原因与处理："
+            echo
+            echo "1. **定制层守卫失败** —— 上游动了我们的路径，需人工决定跟随还是改名避让。"
+            echo "2. **编译或测试失败** —— 上游改了核心接口。本地跑："
+            echo '   ```bash'
+            echo "   bash scripts/xyb-sync-upstream.sh --merge && bash scripts/xyb-dev.sh"
+            echo '   ```'
+            echo "3. **门禁失败**（插件清单 / 子智能体 / 品牌）—— 多数可直接跑脚本修复。"
+          } > /tmp/issue-body.md
+          bash .github/scripts/upsert-issue.sh "${TITLE}" /tmp/issue-body.md
