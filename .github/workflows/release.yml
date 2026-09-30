@@ -483,6 +483,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The feed check below runs a repository script, so this job needs the
+      # working tree. The checkout must come *before* the artifact download:
+      # actions/checkout cleans the workspace by default, which would delete a
+      # dist/ that was already populated.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist

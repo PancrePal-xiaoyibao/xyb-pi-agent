@@ -218,6 +218,29 @@ test("release matrix packages both native macOS architectures", () => {
   assert.match(releaseWorkflowSource, /Merge macOS updater metadata[\s\S]*?ruby/);
 });
 
+test("the publish job checks out the repository before it reads the feeds", () => {
+  // The publish job runs scripts/check-release-feeds.mjs after merging the
+  // macOS feeds. Its first v0.16.1 attempt failed with MODULE_NOT_FOUND because
+  // that job only downloaded artifacts and never checked the repository out.
+  // The checkout must also come before the download: actions/checkout cleans
+  // the workspace by default, which would delete an already-populated dist/.
+  const publishJob = releaseWorkflowSource.match(/\n {2}publish:[\s\S]*$/)?.[0];
+  assert.ok(publishJob, "the publish job is missing");
+  const checkout = publishJob.indexOf("uses: actions/checkout@");
+  const download = publishJob.indexOf("uses: actions/download-artifact@");
+  assert.ok(checkout !== -1, "the publish job must check out the repository");
+  assert.ok(download !== -1, "the publish job must download the build artifacts");
+  assert.ok(
+    checkout < download,
+    "the checkout must come before the artifact download",
+  );
+  assert.match(
+    publishJob,
+    /run: node scripts\/check-release-feeds\.mjs dist/,
+    "the publish job runs the feed check",
+  );
+});
+
 test("macOS release signing is required on tag pushes", () => {
   assert.match(
     releaseWorkflowSource,
