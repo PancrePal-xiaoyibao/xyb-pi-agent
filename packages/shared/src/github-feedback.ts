@@ -8,13 +8,13 @@
 export const GITHUB_FEEDBACK_REPO = "PancrePal-xiaoyibao/xyb-pi-agent";
 
 /**
- * 发布产物所在仓库。远程 host（pi-host）按 `v<version>` 从这里取 tarball 与 sha256，
- * 而小胰宝 fork 目前还没有自己的 Release，所以暂时沿用上游。
+ * 发布产物所在仓库。远程 host（pi-host）按 `v<version>` 从这里取 tarball 与 sha256。
  *
- * 首次用 CI 发布自己的版本后，应把它也改为 GITHUB_FEEDBACK_REPO
- * （release.yml 会一并上传 pi-host-<version>-linux-<arch>.tar.gz 与校验文件）。
+ * 0.16.1 起本仓库自己发布这些产物（release.yml 会一并上传
+ * pi-host-<version>-linux-<arch>.tar.gz 与校验文件），所以与反馈入口是同一个仓库。
+ * 此前沿用上游时，远程 host 实际装的是上游的 sidecar，版本号相同也看不出来。
  */
-export const GITHUB_REPO = "vastsa/PI-Desktop";
+export const GITHUB_REPO = GITHUB_FEEDBACK_REPO;
 export const GITHUB_BUG_TEMPLATE = "bug_report.yml";
 export const GITHUB_ISSUE_ORIGIN = "https://github.com";
 
