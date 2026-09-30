@@ -36,24 +36,58 @@ function redact(text) {
     .replace(/[\u4e00-\u9fa5]{2,10}(医院|医学中心|肿瘤医院|人民医院|医学院)/g, "[医院]");
 }
 
-/** 扫描并归类一个目录，返回统计结果。命令与面板共用。 */
-async function scanDirectory(dir) {
-  const entries = await pi.fs.list(dir, { recursive: true, maxDepth: 4 });
-  const files = (entries || []).filter((e) => !e.isDirectory);
+/**
+ * 扫描并归类资料。
+ *
+ * fs 路径语义（以宿主实现为准，别照直觉写）：
+ *   · `requestDirectory()` 选中的目录**就是** root（manifest 声明 root: "userSelected"），
+ *     所以从空路径起算，路径一律是 root 相对路径；
+ *   · `fs.list(path)` **每次只列一层**（宿主刻意如此，便于界面懒展开），
+ *     不接受递归参数——早先传 `{ recursive: true }` 会被静默忽略，只扫到第一层；
+ *   · 递归与深度上限要自己控制。
+ */
+const MAX_SCAN_DEPTH = 4;
+
+async function scanDirectory() {
   const buckets = {};
-  for (const f of files) {
-    const kind = classify(f.name);
-    buckets[kind] = (buckets[kind] || 0) + 1;
+  let total = 0;
+  let level = [""];
+  let depth = 0;
+
+  while (level.length && depth < MAX_SCAN_DEPTH) {
+    const next = [];
+    for (const dir of level) {
+      let entries;
+      try {
+        entries = await pi.fs.list(dir);
+      } catch (err) {
+        // 无权限或已消失的目录跳过，不中断整次扫描
+        continue;
+      }
+      for (const e of entries || []) {
+        if (e.isDirectory) {
+          next.push(e.path);
+          continue;
+        }
+        total += 1;
+        const kind = classify(e.name);
+        buckets[kind] = (buckets[kind] || 0) + 1;
+      }
+    }
+    level = next;
+    depth += 1;
   }
-  return { total: files.length, buckets };
+
+  return { total, buckets };
 }
 
 async function runImport() {
   // 由用户亲自选择目录，插件不自行扩大读取范围。
-  const dir = await pi.fs.requestDirectory({ title: "选择要导入的资料文件夹" });
-  if (!dir) return { cancelled: true };
+  // 注意：requestDirectory() 不接受参数（早先传 { title } 会被忽略）。
+  const picked = await pi.fs.requestDirectory();
+  if (!picked) return { cancelled: true };
 
-  const { total, buckets } = await scanDirectory(dir);
+  const { total, buckets } = await scanDirectory();
   const summary = Object.entries(buckets)
     .map(([k, v]) => `${k} ${v} 份`)
     .join("，");
@@ -86,9 +120,11 @@ async function runImport() {
     indexWritten = false;
   }
 
-  await pi.ui.showToast({
-    message: total ? `已扫描 ${total} 份资料（${summary}）` : "这个文件夹里没有找到可识别的资料",
-  });
+  // showToast 的第一个参数是**字符串**（签名 showToast(message, level?)）；
+  // 早先传 { message } 对象，界面会显示 "[object Object]"。
+  await pi.ui.showToast(
+    total ? `已扫描 ${total} 份资料（${summary}）` : "这个文件夹里没有找到可识别的资料",
+  );
   return { total, buckets, indexWritten, disclaimer: DISCLAIMER };
 }
 
@@ -96,7 +132,7 @@ async function runSummary() {
   const settings = await pi.plugin.getSettings();
   const vault = (settings && settings.vaultDir) || "";
   if (!vault) {
-    await pi.ui.showToast({ message: "请先在插件设置里选择「资料库位置」" });
+    await pi.ui.showToast("请先在插件设置里选择「资料库位置」", "warn");
     return { ok: false, reason: "NO_VAULT" };
   }
   return { ok: true, vault, disclaimer: DISCLAIMER };

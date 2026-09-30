@@ -227,6 +227,7 @@ jobs:
           set -euo pipefail
           node scripts/xyb-check-plugins.mjs
           node scripts/xyb-check-plugin-api.mjs
+          node scripts/xyb-check-plugin-contract.mjs
           node scripts/xyb-check-subagents.mjs
           python3 scripts/xyb-apply-brand-strings.py --check
           python3 scripts/xyb-restore-brand.py --check

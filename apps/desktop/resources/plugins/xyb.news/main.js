@@ -20,7 +20,15 @@ function daysAgoISO(n) {
 }
 
 async function fetchJson(url) {
-  const res = await pi.net.fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+  // pi.net.fetch 只接受一个对象参数 { url, method?, headers?, body?, timeoutMs? }。
+  // 写成 pi.net.fetch(url, {...}) 会让 input.url 为 undefined，
+  // 宿主抛 "only http(s) URLs allowed"（实测踩过）。
+  const res = await pi.net.fetch({
+    url,
+    method: "GET",
+    headers: { Accept: "application/json" },
+    timeoutMs: 20000,
+  });
   if (!res || !res.ok) {
     const err = new Error("数据源请求失败");
     err.code = "NETWORK";
@@ -79,7 +87,7 @@ async function onLoad() {
     title: "小胰宝：刷新进展",
     keywords: ["进展", "资讯", "新药", "研究", "news"],
     run: async () => {
-      await pi.ui.showToast({ message: "正在汇集最新进展…" });
+      await pi.ui.showToast("正在汇集最新进展…");
       const data = await fetchProgress({});
       return { ok: true, count: data.items.length };
     },

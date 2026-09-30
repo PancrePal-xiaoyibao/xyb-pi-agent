@@ -80,7 +80,7 @@ async function onLoad() {
     keywords: ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台"],
     run: async () => {
       const names = SOURCES.map((s) => s.name).join("、");
-      await pi.ui.showToast({ message: `试验来源：${names}` });
+      await pi.ui.showToast(`试验来源：${names}`);
       return { ok: true, sources: SOURCES, cdeNote: CDE_NOTE, disclaimer: DISCLAIMER };
     },
   });

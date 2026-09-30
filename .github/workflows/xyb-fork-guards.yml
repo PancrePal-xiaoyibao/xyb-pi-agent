@@ -47,6 +47,10 @@ jobs:
       - name: 插件 API 面校验
         run: node scripts/xyb-check-plugin-api.mjs
 
+      # API 名字还在不等于调用形状对：契约测试用「与宿主同等严格」的模拟 pi 跑一遍插件
+      - name: 插件契约测试
+        run: node scripts/xyb-check-plugin-contract.mjs
+
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'

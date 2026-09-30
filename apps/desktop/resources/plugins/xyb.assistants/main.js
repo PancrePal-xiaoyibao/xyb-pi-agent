@@ -28,7 +28,7 @@ async function onLoad() {
     keywords: ["助手", "智能体", "assistant", "病历", "营养", "心理"],
     run: async () => {
       const names = ASSISTANTS.map((a) => a.name).join("、");
-      await pi.ui.showToast({ message: `可用助手：${names}` });
+      await pi.ui.showToast(`可用助手：${names}`);
       return { ok: true, assistants: ASSISTANTS, disclaimer: DISCLAIMER };
     },
   });

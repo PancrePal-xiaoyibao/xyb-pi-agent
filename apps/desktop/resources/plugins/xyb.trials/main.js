@@ -156,9 +156,14 @@ async function searchTrials(input) {
   const { text: terms, translated, dropped } = translateTerms(raw);
   const condition = (input && input.condition) || DEFAULT_CONDITION;
 
-  const res = await pi.net.fetch(CTGOV_SEARCH + "?" + buildQuery({ condition, terms }), {
+  // 注意签名：pi.net.fetch 只接受**一个对象参数** { url, method?, headers?, body?, timeoutMs? }。
+  // 写成 pi.net.fetch(url, {...}) 会让 input.url 为 undefined，
+  // 宿主随即抛 "only http(s) URLs allowed"（实测踩过）。
+  const res = await pi.net.fetch({
+    url: CTGOV_SEARCH + "?" + buildQuery({ condition, terms }),
     method: "GET",
     headers: { Accept: "application/json" },
+    timeoutMs: 20000,
   });
   if (!res || !res.ok) {
     const err = new Error("试验数据源请求失败");
@@ -186,10 +191,10 @@ async function onLoad() {
     run: async () => {
       const settings = await pi.plugin.getSettings();
       if (!settings || settings.sourceCtGov === false) {
-        await pi.ui.showToast({ message: "请在插件设置中至少开启一个试验数据源" });
+        await pi.ui.showToast("请在插件设置中至少开启一个试验数据源", "warn");
         return { ok: false, reason: "NO_SOURCE" };
       }
-      await pi.ui.showToast({ message: "开始检索公开试验信息…" });
+      await pi.ui.showToast("开始检索公开试验信息…");
       return { ok: true };
     },
   });
