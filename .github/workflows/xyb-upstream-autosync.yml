@@ -226,9 +226,28 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/xyb-check-plugins.mjs
+          node scripts/xyb-check-plugin-api.mjs
           node scripts/xyb-check-subagents.mjs
           python3 scripts/xyb-apply-brand-strings.py --check
           python3 scripts/xyb-restore-brand.py --check
+
+      - name: 上游是否动了插件 API（告警，不阻塞）
+        if: steps.merge.outputs.state == 'merged'
+        run: |
+          set -euo pipefail
+          SDK_CHANGED="$(git diff --name-only "${{ steps.probe.outputs.base }}" HEAD -- \
+            packages/plugin-sdk/ | wc -l | tr -d ' ')"
+          if [ "${SDK_CHANGED}" != "0" ]; then
+            echo "::warning::上游改动了 packages/plugin-sdk/（${SDK_CHANGED} 个文件）。"
+            echo "插件 API 面已通过静态校验，但**运行时行为**仍需人工确认："
+            echo "启动应用点一遍三个视图与助手工具（编译通过不等于功能没坏）。"
+            {
+              echo "### ⚠ 上游改动了插件 SDK"
+              echo
+              echo "改了 ${SDK_CHANGED} 个文件。静态门禁已通过，但请人工回归："
+              echo "插件加载 / 右侧面板视图 / 助手工具调用。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: 推进 main（auto-merge 模式）
         id: push

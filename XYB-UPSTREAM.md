@@ -246,7 +246,7 @@ git push origin main
 | 5 | `pnpm install --frozen-lockfile` + `pnpm build:js` | 失败 → 不推，开 issue |
 | 6 | 各包 typecheck 与 test | 同上 |
 | 7 | 上游动了 `crates/` 才编译并测试 Rust host-core | 同上 |
-| 8 | fork 门禁（插件 / 子智能体 / 品牌资产 / 品牌文案） | 同上 |
+| 8 | fork 门禁（插件清单 / **插件 API 面** / 子智能体 / 品牌资产 / 品牌文案） | 同上 |
 | 9 | 确认 `origin/main` 没被别人推进过，然后推到 main | 被推进 → 拒绝推送（不覆盖他人工作） |
 
 **不会做的事**：不推 tag、不调用 publish。所以 `release.yml`（tag 触发）不会跑，
@@ -277,6 +277,22 @@ bash scripts/xyb-guard-custom-layer.sh upstream/main main HEAD
 - **有审计轨迹**：每次运行写 Step Summary（含守卫输出），冲突与失败会开/更新 issue。
 - **要人工过目就切 `pr` 模式**：手动触发时选 `mode=pr`，只开 PR 等人工合。
   上游做大重构（动 `packages/plugin-sdk/**`）时建议用这个模式。
+
+### 残余风险（自动流程挡不住的那部分）
+
+自动化的边界必须说清，否则会误以为「全绿就没问题」：
+
+1. **插件的 main.js 不参与 TypeScript 类型检查**（它们不在任何 tsconfig 的 include 里）。
+   上游改插件 API 时，`build:js`、`typecheck`、`test` **全都不会报错**，运行时才炸。
+   → 已加静态门禁 `scripts/xyb-check-plugin-api.mjs`：把插件实际调用的
+   `pi.<命名空间>.<方法>`（当前 **10 个**）逐个对照 `packages/plugin-sdk/src` 的声明，
+   上游改名/删除即失败。上游动了 `packages/plugin-sdk/**` 时流程还会额外给一条告警。
+2. **静态 API 面通过 ≠ 运行时行为正确**。上游改了 SDK 的语义（参数含义、返回形状、
+   权限判定）时门禁看不出来。所以每次同步后仍建议起一次应用，点一遍
+   **插件加载 / 右侧面板三个视图 / 助手工具调用**。这一步是手工的，也是最有价值的。
+3. 上游自带的两个插件 `pi.browser`、`pi.file-manager` 用了更宽的 API 面
+   （`pi.browser.cdp`、`pi.workspace.get` 等），它们同时也是插件 API 的参考实现——
+   排查插件写法时先看它们。
 
 ### 可选的加严
 

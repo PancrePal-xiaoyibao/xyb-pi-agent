@@ -42,6 +42,11 @@ jobs:
       - name: 插件清单校验
         run: node scripts/xyb-check-plugins.mjs
 
+      # 插件的 main.js 不参与类型检查：上游改插件 API 时编译与测试都会全绿，
+      # 运行时才炸。这条检查把 API 面钉住（对照 packages/plugin-sdk/src）。
+      - name: 插件 API 面校验
+        run: node scripts/xyb-check-plugin-api.mjs
+
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
