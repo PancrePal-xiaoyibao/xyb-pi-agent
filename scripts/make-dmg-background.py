@@ -10,6 +10,7 @@ Run: python3 scripts/make-dmg-background.py
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -18,6 +19,13 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "apps" / "desktop" / "build"
 ICON_SOURCE = BUILD / "icon_1024.png"
+
+# The plate names the product the installer is for, so read it from the same
+# build config electron-builder uses instead of repeating the string here: a
+# rebrand must not leave the DMG window advertising the previous name.
+PRODUCT_NAME = json.loads(
+    (ROOT / "apps" / "desktop" / "package.json").read_text("utf-8")
+)["build"]["productName"]
 
 # Logical 1x coordinates. Keep in sync with apps/desktop/package.json build.dmg.
 WIDTH = 720
@@ -130,12 +138,18 @@ def _wordmark(base: Image.Image) -> None:
     with Image.open(ICON_SOURCE) as source:
         mark = source.convert("RGBA").resize((mark_size, mark_size), Image.LANCZOS)
 
-    title_font = _font("/System/Library/Fonts/HelveticaNeue.ttc", 21, index=10)
+    # Helvetica Neue carries no CJK glyphs, so a Chinese product name would
+    # render as missing-glyph boxes.
+    title_font = (
+        _font("/System/Library/Fonts/HelveticaNeue.ttc", 21, index=10)
+        if PRODUCT_NAME.isascii()
+        else _font("/System/Library/Fonts/Hiragino Sans GB.ttc", 21, index=0)
+    )
     caption_font = _font("/System/Library/Fonts/HelveticaNeue.ttc", 13, index=0)
     zh_font = _font("/System/Library/Fonts/Hiragino Sans GB.ttc", 12, index=0)
 
     draw = ImageDraw.Draw(base)
-    title = "PI-Desktop"
+    title = PRODUCT_NAME
     x0, y0, x1, y1 = draw.textbbox((0, 0), title, font=title_font)
     gap = _px(10)
     cluster_w = mark_size + gap + (x1 - x0)
