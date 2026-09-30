@@ -68,9 +68,10 @@
 但**对外分发时说不清楚**。建议按统一许可补齐（同组织已有 Apache-2.0 与 MIT 先例）。
 
 **2）AGPL-3.0 是强 copyleft**。`wechat-article-downloader` 已排除（另一条理由见下），
-但 `graphify-xiaoyibao` 是患者向的（肿瘤标志物趋势）。
+`graphify-xiaoyibao` 是患者向的（肿瘤标志物趋势），**已决定接入**（见第八节）。
 AGPL 的传染性意味着：**分发含它的客户端，整体要按 AGPL 开源**。
-仓库当前是 PRIVATE，暂不构成分发；一旦转公开就必须处理。
+仓库当前是 PRIVATE，暂不构成分发；一旦转公开就必须处理——
+这条不能只写在文档里，要落到发布流程。
 
 另：`wechat-article-downloader` 的 README 自己写明是
 `qiye45/wechatDownload` 的**下游项目**，并要求「访问原创项目获得完整能力」——
@@ -86,7 +87,7 @@ AGPL 的传染性意味着：**分发含它的客户端，整体要按 AGPL 开�
 |---|---|---|---|
 | `clinical-trial-matching` | 癌症试验匹配（CT.gov + ChiCTR 双源、入排分析） | 纯提示 | **原样可用**，与本项目 chictr / chinadrugtrials MCP 直接衔接 |
 | `clinicaltrials-query-analysis` | 靶点专题检索与报告流水线 | 脚本 | 方法论层可用，脚本层标注前置 |
-| `graphify-xiaoyibao` | 肿瘤标志物趋势图（CA19-9/CEA/AFP） | 纯提示 | ⚠️ AGPL，待定 |
+| `graphify-xiaoyibao` | 肿瘤标志物趋势（CA19-9/CEA/AFP/CA50/CA72-4/CA125） | 上游需 `xyb` CLI | **已接入**（方法论层）；AGPL-3.0，许可影响单独标注 |
 | `Medical-Record-Organizer` | 病案整理（影像/PDF/录音分类归档） | 脚本 + OCR | 方法论层 + 标注前置 |
 | `skills_report_genie` | 医疗文件扫描分类去重、生成报告 | 脚本 | 与上者重叠，合并处理 |
 | `aura_health_profile` | 化验单→健康档案→复诊简报 | 阿里云百炼 | 需配置云端密钥，默认不可用 |
@@ -180,10 +181,10 @@ readiness: 可用 | 方法论层（需本机工具） | 需配置密钥
 
 | 批次 | 内容 | 状态 |
 |---|---|---|
-| 1 | 患者向纯提示类：`clinical-trial-matching`、`clinicaltrials-query-analysis`、`skills_report_genie`（整理方法论） | 本轮实现 |
-| 2 | 患者向脚本类：`Medical-Record-Organizer`、`pdf-translate`、`xyb_dicom_download_skills`、`nccn-guideline-downloader`（评估版权后） | 待定 |
-| 3 | 运营/内容侧 10 个 | 待定 |
-| 4 | AGPL 那两个（`graphify-xiaoyibao`）与云端密钥类（`aura_health_profile`、`skill-HADS-accessment`） | 需先定许可与隐私策略 |
+| 1 | `clinical-trial-matching`、`Medical-Record-Organizer`、`skill-HADS-accessment`、`graphify-xiaoyibao` | **已实现**（见第七节） |
+| 2 | `pdf-translate`、`xyb_dicom_download_skills`、`clinicaltrials-query-analysis`、`skills_report_genie` | 待定 |
+| — | 运营/内容侧 10 个 | **不接入**（已决定，见第八节） |
+| — | `aura_health_profile`（依赖阿里云百炼密钥） | 待定 |
 
 ---
 
@@ -192,15 +193,33 @@ readiness: 可用 | 方法论层（需本机工具） | 需配置密钥
 见 `apps/desktop/resources/plugins/xyb.skillpack/`。逐个技能的适配说明写在
 该插件 README 的表格里（上游仓库 / 许可 / readiness / 改写了什么）。
 
+已接入 4 个：`trial-matching-advanced`（试验匹配）、`record-organizer`（病案整理）、
+`distress-screening`（焦虑抑郁量表）、`tumor-marker-trend`（肿瘤标志物趋势）。
+
+一个共同的处理原则：**上游正文里「执行 `scripts/xxx.py`」这类指令一律改写**。
+插件技能只是提示层，没有 shell 权限；照抄进去等于给患者一个用不了的承诺。
+三条出路——转方法论 / 指向本项目已有工具 / 明确标注降级。
+
 ---
 
-## 八、待决事项
+## 八、决定记录
+
+2026-09-30 由项目负责人确认：
+
+| 事项 | 决定 |
+|---|---|
+| 运营/内容侧 10 个（公众号、去 AI 腔、白皮书、RAG、试验情报推送） | **暂不接入** |
+| `graphify-xiaoyibao`（AGPL-3.0） | **接入**，许可影响在该技能里单独标注 |
+| 把问卷发布到公网（`skill-HADS-accessment`） | **不发公网**，保持本机版 |
+
+### 仍需处理
 
 1. **给无 LICENSE 的仓库补许可**（尤其 `Medical-Record-Organizer`、`clinical-trial-matching`、
    `skill-HADS-accessment`）。在小胰宝转公开前必须办。
-2. **`graphify-xiaoyibao` 的 AGPL**：接不接、以什么形式接。
-3. **`skill-HADS-accessment` 要把问卷发布到公网**——患者心理评估数据出网，
-   与「患者数据不出本机」的既有立场冲突，需产品定调。
-4. **`nccn-guideline-downloader` 的版权**：NCCN 指南不是公开可自由分发的资料。
-5. **运营侧 10 个技能**依赖的生产密钥（TG/微信/飞书/FastGPT）不进客户端，
-   只能接方法论层——这个取舍是否接受。
+2. **AGPL-3.0 的分发策略**：`graphify-xiaoyibao` 已接入。仓库当前是 PRIVATE，
+   暂不构成分发；一旦转公开、或对外分发含此技能的产物，整体需按 AGPL 处理。
+   这一条要落到发布流程里，不能只写在文档。
+3. **`nccn-guideline-downloader` 的版权**：NCCN 指南不是公开可自由分发的资料。
+4. **剩余患者向候选是否继续接**：`pdf-translate`、`xyb_dicom_download_skills`、
+   `aura_health_profile`（需云端密钥）、`skills_report_genie`（与病案整理重叠）。
+

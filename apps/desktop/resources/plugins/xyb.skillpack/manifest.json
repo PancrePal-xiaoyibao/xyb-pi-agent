@@ -25,7 +25,8 @@
     "skills": [
       "skills/trial-matching-advanced.md",
       "skills/record-organizer.md",
-      "skills/distress-screening.md"
+      "skills/distress-screening.md",
+      "skills/tumor-marker-trend.md"
     ]
   },
   "permissions": ["ui.view", "agent.prompt.inject"],

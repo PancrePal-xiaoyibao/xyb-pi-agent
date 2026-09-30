@@ -23,6 +23,7 @@
 | `trial-matching-advanced.md` | `clinical-trial-matching` v2.0.0 | 未声明 | **可完整使用** |
 | `record-organizer.md` | `Medical-Record-Organizer` | 未声明 | 方法论层（需本机工具） |
 | `distress-screening.md` | `skill-HADS-accessment` | 未声明 | **可完整使用**（已去公网发布） |
+| `tumor-marker-trend.md` | `graphify-xiaoyibao` v0.1.0 | **AGPL-3.0** | 方法论层（上游需 `xyb` CLI） |
 
 ### 逐条说明改了什么
 
@@ -43,10 +44,22 @@
 
 **distress-screening**
 
-- **移除了上游的公网发布环节**（EdgeOne 发布问卷 + PDF 导出）。
+- **移除了上游的公网发布环节**（EdgeOne 发布问卷 + PDF 导出），经确认「不发公网」。
   肿瘤患者的心理评估数据不该因为填个问卷就上网，改为全程本机、结果只留本机
 - 补齐了自伤念头的**危机处理流程**（立刻停表、确认安全、给求助路径、危机指引排在最前）
 - 量表结构、0-21 分口径、三档分级原样保留
+
+**tumor-marker-trend**
+
+- 上游靠 `xyb` CLI（`xyb process` → `graph.json` → `xyb markers-trend`）出 CSV/PNG。
+  客户端无执行外部命令的权限，**本机版把趋势表整理改由对话完成**，
+  并写明「上游那两条命令不要照抄给患者」——跑不起来
+- 补齐解读边界：单点无意义看趋势、升高不等于进展（炎症/胆道梗阻可致假性升高）、
+  CA19-9 在 Lewis 抗原阴性人群本就不表达（约 5%~10%）、AFP 也见于活动性肝病
+- 明确哪些情况要**尽快联系主管医生**，不给「再观察看看」
+- **许可 AGPL-3.0**：仓库当前 PRIVATE 暂不构成分发；转公开或对外分发含此技能的产物时，
+  整体需按 AGPL 处理。本技能文档是独立改写，未内联上游代码与脚本
+- 上游另有的 `patient-records-template-v2` 档案模板**未内联**（同属 AGPL 且体量不小）
 
 ## 加新技能时
 
@@ -69,4 +82,8 @@ pnpm pi-plugin check apps/desktop/resources/plugins/xyb.skillpack
 - **开发基建类**（数学/美学大脑、Codex 编排、技能池、OpenClaw 运维）——与患者端功能无关
 - **lark / 飞书类** ——按项目要求排除
 - **ChiCTR 与中国药物临床试验登记平台** ——已由 `xyb.trial-sources` 承担，不重复接
-- **AGPL-3.0 与需把患者数据发布到公网的技能** ——未获明确决定前不接
+- **运营/内容侧 10 个** ——无一例外依赖脚本与推送密钥（TG / 微信 / 飞书 / FastGPT），
+  进客户端只能接方法论层，**经确认暂不接入**
+- **需要把患者数据发布到公网的技能** ——与「患者数据不出本机」冲突，不接
+- **AGPL-3.0**：`graphify-xiaoyibao` 已按决定接入（许可影响单独标注在该技能里）；
+  仓库转公开前需先定整体分发策略
