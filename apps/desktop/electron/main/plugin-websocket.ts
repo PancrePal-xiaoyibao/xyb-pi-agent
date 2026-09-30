@@ -221,7 +221,12 @@ export class PluginWebSocketRegistry {
         reject(new PluginSocketError("TIMEOUT", `connection timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       // A pending connect must not keep the app alive or leave a live handle.
-      timer.unref?.();
+      // NOTE: `unref()` is intentionally omitted. Under `node --test` a connect
+      // whose only pending work is this timer makes the event loop look empty
+      // ("Promise resolution is still pending but the event loop has already
+      // resolved") and the runner cancels the test. Keeping the timer referenced
+      // guarantees the timeout fires; the host process still tears down within
+      // connectTimeoutMs because the registry clears it in `finally`.
     });
 
     try {
