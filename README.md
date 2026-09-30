@@ -24,6 +24,7 @@
 **[Download](https://github.com/vastsa/PI-Desktop/releases/latest)** ·
 [Documentation](https://pi-docs.aiuo.net/) ·
 [Build a Plugin](docs/plugin-development.md) ·
+[Contributing Extensions](XYB-EXTENSIONS.md) ·
 [Screenshots](docs/guide/screenshots.md) ·
 [简体中文](README.zh-CN.md)
 
@@ -40,6 +41,36 @@
 > **Current release line: 0.16.x (Early Preview).**
 
 ---
+
+## Build for the community: plugins, skills, and MCP
+
+**Start with [`XYB-EXTENSIONS.md`](XYB-EXTENSIONS.md)** — the extension contribution spec for this
+fork. It is written so you can hand it to an AI coding agent as-is: how to pick a channel, the
+permission red lines, the "out-of-the-box vs. installer size" rules, and the gates a change has to
+pass before it lands.
+
+| Channel | Where it lives | Ships in the installer? |
+| --- | --- | --- |
+| **Skills** (prompt layer) | `apps/desktop/resources/skills/*.md`, or a plugin's `skills/*.md` | **Yes** — a skill is a few KB |
+| **Plugins** | `apps/desktop/resources/plugins/**` (bundled), or the plugin market (user-installed) | Bundled baseline only |
+| **MCP servers** | declared in a plugin's `manifest.json` → `contributes.mcpServers` | Only the declaration, never the server runtime |
+
+### Which source does what
+
+| Role | Owner | Setup needed | Notes |
+| --- | --- | --- | --- |
+| Keyword / criteria search (**primary**) | **ClinicalTrials.gov API v2** | none | A real search API: authoritative, live, free |
+| Chinese registries | **ChiCTR** (+ the China drug trial registry) | ChiCTR fetches its package on first use; the drug registry needs the user's own browser session | Most Chinese trials are registered there |
+| Detail by identifier / cross-check | **Veeva CTV GraphQL** | none | Anonymous (measured ~1s, 37 fields), zero setup |
+| Extra fields | Veeva CTV | none (direct detail query) | Eligibility criteria, keywords, arms and MeSH terms the CSV export lacks |
+| Change monitoring | Veeva CTV watchlists + the local index | a local index is required | "Is there an update?" needs stored history |
+| Local subset search (**supplementary only**) | the Veeva local index | a local index is required, and **coverage must be declared** | Results must state "index covers N studies as of &lt;date&gt;"; zero hits must never be phrased as "there are no such trials" |
+
+Normative upstream specs: [`docs/plugin-development.md`](docs/plugin-development.md) (zero-to-one
+guide, §6.2 skills, §6.9 MCP) and [`docs/spec/07-plugins/`](docs/spec/07-plugins/) (contracts;
+[`13-plugin-permissions-matrix.md`](docs/spec/07-plugins/13-plugin-permissions-matrix.md) is the
+one to read first). Fork-side field notes: [`XYB-SKILLHUB.md`](XYB-SKILLHUB.md),
+[`XYB-TRIAL-SOURCES.md`](XYB-TRIAL-SOURCES.md).
 
 ## Skills for cancer patients and families
 
