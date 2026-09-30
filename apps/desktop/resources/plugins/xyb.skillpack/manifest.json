@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "xyb.skillpack",
+  "name": "外部技能包",
+  "version": "0.1.0",
+  "description": "从 opencare-skillhub 接入的外部技能。每个技能标注上游仓库、许可与在本机的可用程度；不重复自研助手已覆盖的能力。",
+  "main": "main.js",
+  "contributes": {
+    "views": [
+      {
+        "id": "skills",
+        "title": { "en": "Skill Pack", "zh-CN": "外部技能" },
+        "icon": "sparkles",
+        "entry": "views/skills.html",
+        "order": 41
+      }
+    ],
+    "commands": [
+      {
+        "id": "xyb.skillpack.list",
+        "title": "小胰宝：看看接入了哪些外部技能",
+        "keywords": ["外部技能", "技能包", "skillpack", "skillhub", "来源"]
+      }
+    ],
+    "skills": [
+      "skills/trial-matching-advanced.md",
+      "skills/record-organizer.md",
+      "skills/distress-screening.md"
+    ]
+  },
+  "permissions": ["ui.view", "agent.prompt.inject"],
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup", "onCommand:xyb.skillpack.list"]
+}
