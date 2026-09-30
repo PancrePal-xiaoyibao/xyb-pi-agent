@@ -4,8 +4,28 @@
 触发：打包发布前，逐个插件实测，重点验证临床检索（避免此前「报错不可用」的问题）。
 方法：不读文档、不看代码推断——**真打数据源**。检索题用「B7-H3 在中国有哪些在招募的临床试验」。
 
-工具：`scripts/xyb-check-plugin-contract.mjs`（契约，含联网）、
-`/tmp/mcp-probe.mjs`（直连 MCP 服务）、`/tmp/plugin-probe.mjs`（真实网络 + 真实磁盘跑插件工具/命令）。
+工具（都已收进 `scripts/`，下次发布可复现）：
+
+```bash
+# 1. 契约测试：按 SDK 声明重建「会挑错的 pi」，静态形状 + 真跑 onLoad/命令/工具
+node scripts/xyb-check-plugin-contract.mjs            # 离线
+node scripts/xyb-check-plugin-contract.mjs --online   # 联网，真打数据源
+
+# 2. 直连 MCP 服务，看握手与工具返回
+node scripts/xyb-probe-mcp.mjs chictr npx -y chictr-mcp-server@2.0.2 -- \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_trials","arguments":{"keyword":"胰腺癌","max_results":5}}}'
+
+# 3. 用「真实网络 + 真实磁盘」跑插件工具与命令（不是假 fetch）
+node scripts/xyb-probe-plugin.mjs apps/desktop/resources/plugins/xyb.trials \
+  xyb_trials_search '{"terms":"B7-H3"}'
+PROBE_VAULT=/path/to/测试资料库 node scripts/xyb-probe-plugin.mjs \
+  apps/desktop/resources/plugins/xyb.records xyb.records.import '{}'
+```
+
+第 3 个是真跑的关键：`xyb-check-plugin-contract.mjs` 用假 fetch 只验参数形状，
+要回答「患者按下去会发生什么」必须打真接口。它的域名白名单按 manifest 的
+`net.domains` 做 fail-closed 校验，与宿主一致；设了 `PROBE_VAULT` 时，
+文件操作全部限定在该目录内，越界即抛。
 
 ---
 
