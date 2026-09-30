@@ -523,6 +523,19 @@ jobs:
           RUBY
           rm latest-mac-arm64.yml latest-mac-x64.yml
 
+      - name: Verify updater feeds advertise artifacts that exist
+        # Runs after the macOS merge, so it checks the feed users actually read.
+        # electron-builder rewrites a feed's url/path to the scoped-npm-name
+        # fallback (`${name}-${version}-${arch}.${ext}`) whenever the artifact
+        # name it produced is not a safe GitHub asset name, while the file keeps
+        # the name it wrote. v0.16.0 shipped that way: the AppImage was built as
+        # `小胰宝-0.16.0.AppImage`, GitHub stored it as `-0.16.0.AppImage`, and
+        # latest-linux.yml advertised
+        # `@pi-desktop/desktop-0.16.0-x86_64.AppImage`, so every AppImage updater
+        # request 404s. The release still reported success because no step
+        # compared the feed with the files.
+        run: node scripts/check-release-feeds.mjs dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
