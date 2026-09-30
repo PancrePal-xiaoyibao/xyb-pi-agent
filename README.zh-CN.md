@@ -25,6 +25,7 @@
 **[立即下载](https://github.com/vastsa/PI-Desktop/releases/latest)** ·
 [使用文档](https://pi-docs.aiuo.net/) ·
 [插件开发](docs/plugin-development.md) ·
+[扩展开发规范](XYB-EXTENSIONS.md) ·
 [界面预览](docs/guide/screenshots.md) ·
 [English](README.md)
 
@@ -39,6 +40,29 @@
 </div>
 
 ---
+
+## 给社区加能力：插件 / 技能 / MCP
+
+**先读 [`XYB-EXTENSIONS.md`](XYB-EXTENSIONS.md)** —— 这是本 fork 的扩展开发规范，可以整份交给你的 AI agent 去执行：通道怎么选、权限红线、开箱即用与安装包体积的规则、提交前必须过的门禁。
+
+| 通道 | 放哪里 | 进安装包吗 |
+| --- | --- | --- |
+| **技能**（提示层） | `apps/desktop/resources/skills/*.md`，或插件里的 `skills/*.md` | **进** —— 一个技能只有几十 KB |
+| **插件** | `apps/desktop/resources/plugins/**`（内置），或插件市场（用户按需安装） | 只进基线能力 |
+| **MCP 服务** | 在插件 `manifest.json` 的 `contributes.mcpServers` 里声明 | 只进声明，服务运行时永不进包 |
+
+### 数据源分工（谁负责检索、谁负责详情）
+
+| 角色 | 承担者 | 前置 | 说明 |
+| --- | --- | --- | --- |
+| 关键词 / 条件检索（**主力**） | **ClinicalTrials.gov API v2** | 无 | 有真正的检索接口，权威、实时、免费 |
+| 中文注册库检索 | **ChiCTR**（+ 中国药物临床试验登记平台） | ChiCTR 首次需联网拉包；登记平台需本人浏览器会话 | 中文试验主要登记在这两处 |
+| 按标识取详情 / 交叉对照 | **Veeva CTV GraphQL** | 无 | 匿名可用（实测约 1s、37 字段），零前置 |
+| 补充字段增强 | Veeva CTV | 无（详情直查） | 提供 CSV 导出里没有的纳排标准、关键词、分组、MeSH |
+| 变更监控与提醒 | Veeva CTV watchlist + 本地索引 | 需先建本地库 | 判断"有没有更新"必须有历史状态 |
+| 本地子集检索（**仅作补充**） | Veeva 本地索引 | 需先建库，且**必须声明覆盖度** | 结果须带「索引仅覆盖 N 条 / 截至日期」；0 命中不得表述为"没有相关试验" |
+
+上游规范：[`docs/plugin-development.md`](docs/plugin-development.md)（zero-to-one，§6.2 技能、§6.9 MCP）与 [`docs/spec/07-plugins/`](docs/spec/07-plugins/)（契约，建议先看 [`13-plugin-permissions-matrix.md`](docs/spec/07-plugins/13-plugin-permissions-matrix.md)）。本 fork 的实测记录：[`XYB-SKILLHUB.md`](XYB-SKILLHUB.md)、[`XYB-TRIAL-SOURCES.md`](XYB-TRIAL-SOURCES.md)。
 
 ## 面向肿瘤患者与家属的 Skills
 
