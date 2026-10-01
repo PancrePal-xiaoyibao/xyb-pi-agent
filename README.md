@@ -42,6 +42,53 @@
 
 ---
 
+## Install
+
+1. Download the package for your platform from
+   [Releases](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/latest):
+
+| Platform | Which file |
+| --- | --- |
+| macOS | `xiaoyibao-<version>-arm64.dmg` on Apple silicon, `xiaoyibao-<version>-x64.dmg` on Intel |
+| Windows | `xiaoyibao-Setup-<version>.exe` (installer) or `xiaoyibao-Portable-<version>.exe` (no install) |
+| Linux | `xiaoyibao-<version>-x86_64.AppImage`, `xiaoyibao_<version>_amd64.deb`, or `xiaoyibao-<version>-x86_64.rpm` |
+
+2. macOS: open the DMG and drag **小胰宝** into Applications. Windows: run the installer and follow
+   the prompts. Linux: install the deb/rpm with your package manager, or make the AppImage
+   executable first:
+
+```bash
+chmod +x xiaoyibao-*.AppImage && ./xiaoyibao-*.AppImage
+```
+
+### macOS blocks the first launch: the builds are **not signed yet**
+
+**The current macOS builds are neither Apple-signed nor notarized**, so Gatekeeper stops the first
+launch. You will see one of two prompts:
+
+- "Cannot verify the developer" → open System Settings → Privacy & Security and click **Open
+  Anyway**, or right-click the app and choose **Open**.
+- "**"小胰宝" is damaged and can't be opened.** You should move it to the Trash." → this one has **no**
+  Open Anyway button; you have to clear the download quarantine flag first.
+
+Clear the flag for that one app (adjust the path to where you installed it):
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
+```
+
+If that reports `Operation not permitted` (the app is owned by root, or the policy is stricter), run
+the same command with `sudo`:
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
+```
+
+- The cause is the missing signature, not a broken download — the file itself is intact. The command
+  clears only the `com.apple.quarantine` attribute on that app and touches nothing else.
+- Unsigned Windows builds can trigger SmartScreen too: choose More info → Run anyway.
+- This section goes away once signing and notarization are in place.
+
 ## Build for the community: plugins, skills, and MCP
 
 **Start with [`XYB-EXTENSIONS.md`](XYB-EXTENSIONS.md)** — the extension contribution spec for this

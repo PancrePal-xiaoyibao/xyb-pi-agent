@@ -41,6 +41,45 @@
 
 ---
 
+## 安装
+
+1. 到 [Releases](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/latest) 下载对应平台的安装包：
+
+| 平台 | 选哪个 |
+| --- | --- |
+| macOS | Apple 芯片（M 系列）选 `xiaoyibao-<版本>-arm64.dmg`；Intel 选 `xiaoyibao-<版本>-x64.dmg` |
+| Windows | `xiaoyibao-Setup-<版本>.exe`（安装版）或 `xiaoyibao-Portable-<版本>.exe`（免安装） |
+| Linux | `xiaoyibao-<版本>-x86_64.AppImage`、`xiaoyibao_<版本>_amd64.deb` 或 `xiaoyibao-<版本>-x86_64.rpm` |
+
+2. macOS：打开 DMG，把 **小胰宝** 拖进「应用程序」。Windows：双击安装包，按提示安装。Linux：deb/rpm 用系统包管理器安装；AppImage 要先加可执行权限：
+
+```bash
+chmod +x xiaoyibao-*.AppImage && ./xiaoyibao-*.AppImage
+```
+
+### macOS 首次打开被拦：当前安装包**未签名**
+
+**目前的 macOS 安装包没有做 Apple 签名与公证**，首次启动会被 Gatekeeper 拦下。你会遇到两种提示之一：
+
+- 「无法验证开发者」→ 打开「系统设置 → 隐私与安全性」，点 **仍要打开**；或右键 App → **打开**。
+- 「**"小胰宝"已损坏，无法打开**。你应该将它移到废纸篓」→ 这种提示**没有**「仍要打开」按钮，需要先清掉下载隔离标记。
+
+清除这一个 App 的隔离标记（路径按你的实际安装位置调整）：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
+```
+
+如果这条命令报 `Operation not permitted`（App 归属 root，或系统策略更严），再执行：
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
+```
+
+- 根因是**未签名 / 未公证**，不是安装包损坏——文件本身是完整的；该命令只清除这一个 App 的 `com.apple.quarantine` 属性，不改动其它文件。
+- Windows 的未签名安装包也可能弹 SmartScreen：点「更多信息 → 仍要运行」。
+- 接入签名与公证之后，这一节会删掉。
+
 ## 给社区加能力：插件 / 技能 / MCP
 
 **先读 [`XYB-EXTENSIONS.md`](XYB-EXTENSIONS.md)** —— 这是本 fork 的扩展开发规范，可以整份交给你的 AI agent 去执行：通道怎么选、权限红线、开箱即用与安装包体积的规则、提交前必须过的门禁。
