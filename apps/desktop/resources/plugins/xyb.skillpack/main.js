@@ -47,7 +47,7 @@ const SKILLS = [
     from: "opencare-skillhub/Medical-Record-Organizer",
     upstreamName: "patient-record-organizer",
     license: "上游未声明 LICENSE（仓库归属本组织）",
-    readiness: "方法论层（需本机工具）",
+    readiness: "分类体系与流程已由 xyb.records 本机落地；OCR/语音转写仍未具备",
     what: [
       "六步流程：接收扫描 → 内容提取 → 自动分类 → 时间线 → 生成档案 → 增量持久化",
       "11 类分类体系（基本信息 / 检验 / 影像 / 病理 / 用药 / 诊疗记录 / 其他）",
@@ -55,8 +55,11 @@ const SKILLS = [
     ],
     note:
       "上游原文依赖 OCR/ASR 脚本与多个云服务密钥（MinerU、SiliconFlow、DashScope）。" +
-      "客户端没有执行外部脚本的权限，因此本条只保留**方法论与分类体系**：" +
-      "资料整理由助手按流程用对话完成，需要外接 OCR/语音转写时如实说明暂不具备。",
+      "客户端没有执行外部脚本的权限，因此 OCR 与语音转写仍不具备。" +
+      "但**分类、时间线、缺口提示已由 xyb.records 的「整理病案」在本机确定性实现**" +
+      "（纯本地、不联网、不调用模型），无需助手参与即可运行；" +
+      "本技能保留为方法论与流程说明，遇到需要 OCR/语音转写的环节时如实说明暂不具备。" +
+      "实现为独立重写，未内联上游代码，仅沿用其流程命名与分类名称。",
   },
   {
     id: "distress-screening",
