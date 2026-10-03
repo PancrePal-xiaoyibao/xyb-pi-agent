@@ -2,14 +2,17 @@
   "schemaVersion": 1,
   "id": "xyb.trials",
   "name": "找试验",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "按患者自身情况检索临床试验，可统一整理国内外四个来源的候选清单、来源状态与原始链接。",
   "main": "main.js",
   "contributes": {
     "views": [
       {
         "id": "trials",
-        "title": { "en": "Find Trials", "zh-CN": "找试验" },
+        "title": {
+          "en": "Find Trials",
+          "zh-CN": "找试验"
+        },
         "icon": "target",
         "entry": "views/trials.html",
         "order": 20
@@ -19,10 +22,20 @@
       {
         "id": "xyb.trials.search",
         "title": "小胰宝：按我的情况找试验",
-        "keywords": ["临床试验", "入组", "试验", "trial", "NCT", "ChiCTR"]
+        "keywords": [
+          "临床试验",
+          "入组",
+          "试验",
+          "trial",
+          "NCT",
+          "ChiCTR"
+        ]
       }
     ],
-    "skills": ["skills/trial-match.md", "skills/unified-trial-query.md"],
+    "skills": [
+      "skills/trial-match.md",
+      "skills/unified-trial-query.md"
+    ],
     "agentTools": [
       {
         "name": "xyb_trials_search",
@@ -31,8 +44,14 @@
         "schema": {
           "type": "object",
           "properties": {
-            "condition": { "type": "string", "description": "病种（英文更准），默认 pancreatic cancer" },
-            "terms": { "type": "string", "description": "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」" }
+            "condition": {
+              "type": "string",
+              "description": "病种（英文更准），默认 pancreatic cancer"
+            },
+            "terms": {
+              "type": "string",
+              "description": "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」"
+            }
           }
         }
       },
@@ -43,14 +62,22 @@
         "schema": {
           "type": "object",
           "properties": {
-            "condition": { "type": "string", "description": "病种（可选）" },
-            "keywords": { "type": "string", "description": "本次使用的关键词（可选）" },
+            "condition": {
+              "type": "string",
+              "description": "病种（可选）"
+            },
+            "keywords": {
+              "type": "string",
+              "description": "本次使用的关键词（可选）"
+            },
             "sourceResults": {
               "type": "object",
               "description": "逐来源结果。键为 clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials；值为 { state, records?, explanation?, fetchedAt? }。state 取 SUCCESS / NO_RESULTS / NOT_ENABLED / NEEDS_SETUP / INDEX_EMPTY / SESSION_EXPIRED / CHALLENGE_REQUIRED / TIMEOUT / FAILED。某来源没跑就不填或明确填 NOT_ENABLED，不要用空数组假装「没有结果」。"
             }
           },
-          "required": ["sourceResults"]
+          "required": [
+            "sourceResults"
+          ]
         }
       }
     ],
@@ -63,12 +90,22 @@
       }
     ]
   },
-  "permissions": ["ui.view", "agent.tool.register", "agent.prompt.inject", "net.fetch"],
+  "permissions": [
+    "ui.view",
+    "agent.tool.register",
+    "agent.prompt.inject",
+    "net.fetch"
+  ],
   "net": {
-    "domains": ["clinicaltrials.gov"]
+    "domains": [
+      "clinicaltrials.gov"
+    ]
   },
   "engines": {
     "piDesktop": ">=0.1.0"
   },
-  "activationEvents": ["onStartup", "onCommand:xyb.trials.search"]
+  "activationEvents": [
+    "onStartup",
+    "onCommand:xyb.trials.search"
+  ]
 }

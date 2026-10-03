@@ -341,6 +341,7 @@ Each ADR includes:
 | 0308 | [Remove the Pull Requests destination and listing tool](0308-remove-pull-requests-destination.md) | Accepted |
 | 0309 | [Remove bundled macOS first-launch guidance](0309-remove-macos-first-launch-artifacts.md) | Accepted (D634; amends D457 / ADR 0296) |
 | 0310 | [Keep local permission approvals pending until resolved](0310-local-permission-approvals-without-deadline.md) | Accepted for implementation |
+| 0311 | [Deterministic channel orchestration for the unified trial query](0311-deterministic-channel-orchestration.md) | Proposed |
 | turn-process-and-thinking-display | [Turn process and thinking presentation](turn-process-and-thinking-display.md) | Accepted |
 | provider-display-order | [Provider display order](provider-display-order.md) | Accepted |
 | registry-header-variable-spelling | [Remote header variables accept the registry's `{name}` spelling](registry-header-variable-spelling.md) | Proposed |

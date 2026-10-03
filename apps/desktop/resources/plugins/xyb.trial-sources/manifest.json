@@ -36,10 +36,7 @@
         "label": "Veeva CTV（本地索引）",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "ctv-mcp-server@0.1.0"],
-        "env": {
-          "CTV_DATA_DIR": { "setting": "veevaDataDir" }
-        }
+        "args": ["-y", "ctv-mcp-server@0.1.0"]
       },
       {
         "id": "chinadrugtrials",
@@ -55,7 +52,7 @@
       "key": "veevaDataDir",
       "type": "string",
       "title": "Veeva CTV 数据目录",
-      "description": "Veeva CTV 本地索引（ctv.db）所在目录。留空（推荐）使用 ~/.ctv-mcp；首次启动时若无索引，会自动复制随应用分发的种子数据到这里，之后你的刷新结果也写在这里。",
+      "description": "Veeva CTV 本地索引（ctv.db）所在目录。留空（推荐）使用 ~/.ctv-mcp：首次启动时若无索引，会自动把随应用分发的种子数据复制到这里，之后你的刷新结果也写在这里。仅当你把索引放在别处时才需要填。",
       "default": ""
     }
   ],

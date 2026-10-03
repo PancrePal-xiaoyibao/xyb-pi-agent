@@ -1,6 +1,6 @@
 # 四渠道统一临床试验查询：设计契约（F2）
 
-**文档版本：v1.8**（对应实现：`xyb.trials` 0.2.0 / `xyb.trial-sources` 0.2.0 / `xyb.records` 0.3.0）
+**文档版本：v1.11**（对应实现：`xyb.trials` 0.2.1 / `xyb.trial-sources` 0.2.0 / `xyb.records` 0.3.0 / `xyb.news` 0.1.1）
 **状态：已实现并通过离线回归**
 **上游设计版本：SPEC v8（ADR-F2-01 方案 B）**
 
@@ -303,6 +303,71 @@ cargo test -p host-core --locked             # → 671 passed / 0 failed（exit 
       保留了连字符），它不落在本 MCP 的命名空间内，`keywords` 过滤不到属预期行为——
       应改用不带 `keywords` 的调用查看实际目录名，而不是把目录名当关键词传。
 
+15. **失败原因必须可区分，不得一律归因于「网络问题」（v1.9 起）**：
+    - **实测故障**：CT.gov 检索失败时，`xyb.trials/main.js` 只抛一句「试验数据源请求失败」，
+      面板 `views/trials.html` 又把**任何**异常渲染成「检索失败，请检查网络后在设置里确认数据源已开启」。
+      于是 HTTP 5xx、429 限流、插件宿主进程重启（`PLUGIN_CRASHED`）在界面上**与断网完全一样**，
+      用户和助手都无法判断该重试、该等待还是该改设置。
+    - 现契约：`searchTrials` 失败时按响应状态区分——`429 → RATE_LIMITED`、`>=500 → UPSTREAM_ERROR`、
+      无响应 → `NETWORK`，并且 `message` 里带上 `HTTP <status>` 或「没有拿到响应」，
+      `err.status` 保留原始状态码。
+    - 面板侧 `failureText()` 对 `NETWORK` / `RATE_LIMITED` / `UPSTREAM_ERROR` / `PLUGIN_CRASHED` /
+      `NO_SOURCE` / `NOT_FOUND` 各给不同且可执行的提示；**未知错误码必须原样显示错误码与原始信息**，
+      不得退回成笼统的网络提示。回归测试
+      `apps/desktop/test/xyb-trials-errors.test.mjs`（8 pass）断言这几类文案彼此不同。
+    - 面板还修了两处旧问题：`bridge.invoke("xyb.trials.search", …)` 此前**只传 `terms`、从不传
+      `condition`**，病种完全依赖插件默认值；现显式传 `condition`。此外旧代码把
+      `res.ok === false` 的失败结构当成成功渲染（`render(res && res.items, …)`），现先判失败结构。
+    - **排错提示**：日志里出现 `plugin.host.process.crashed ... exitCode:15`（SIGTERM）意味着
+      插件宿主进程被外部结束（例如误用 `pkill -f 小胰宝`），此时工具调用报的
+      `NETWORK`/`PLUGIN_CRASHED` **不是站点或网络缺陷**，重启应用即可。
+
+16. **助手必须先走渠道工具，浏览器只能兜底（v1.10 起）**：
+    - **实测故障（2026-10-03）**：用户问「按渠道汇总 IBI343 的数量」，助手**没有调用任何渠道工具**，
+      而是拿宿主的通用网页抓取工具去抓三个**检索列表页**——`clinicaltrials.gov/search?term=IBI343`、
+      `chinadrugtrials.org.cn/search.html?keyword=IBI343`、`chictr.org.cn/search?keyword=IBI343`——
+      **三次全部失败**（三个站点的检索页都是 JS 渲染，抓回来是空壳），最后一条渠道结果也没拿到。
+    - **根因**：技能 `skills/unified-trial-query.md` 的 description 触发词是「找临床试验」「统一查询」
+      这类**意图词**，而用户问的是「按渠道汇总……数量」这类**统计口径**问法 → 技能未被加载 →
+      助手不知道有四个渠道存在 → 只能拿唯一可用的通用抓取工具去抓网页。
+    - 现约定**双保险**：①技能 description 扩写覆盖统计口径问法（「按渠道汇总{关键词}的数量」
+      「各渠道查到多少条」「{药名}有多少个试验」等），并在正文新增**第零节「取数优先级」**；
+      ②渠道工具自身的 description 直接写明优先级（`xyb_trials_search` / `xyb_trials_unify` 均声明
+      「凡是查临床试验都优先用本工具，不要用浏览器抓检索页」），技能未加载时仍然生效。
+    - **硬性规则**：渠道工具永远先试；浏览器/网页抓取**仅当**某渠道 `FAILED` 且需核对**具体登记号
+      详情页**时才用，且必须先说明该渠道为何不可用。**禁止抓取检索列表页**
+      （`/search?...`、`?keyword=...` 形态）；ClinicalTrials.gov 的详情页用
+      `https://clinicaltrials.gov/study/{NCT}`，ChiCTR 与 CDE 的详情**必须**用各自 MCP 的
+      `get_trial_detail`，不得抓网页。
+    - **参数契约**：`xyb_trials_search` 的 `condition` 只填**病种**（英文更准，如
+      `pancreatic cancer`），药物名/靶点填 `terms`（如 `IBI343`）。实测把药名填进 `condition` 仍能出结果
+      （`cond=IBI343` → 9 条）但**不聚焦**（`cond=pancreatic cancer` → 5 条），属检索语义错误而非失败。
+
+17. **宿主 `pi.net.fetch` 返回的是 `{status,headers,bodyText}`，不是 web `Response`（v1.11 起）**：
+    - **这是本轮最严重的缺陷**：`xyb.trials` 与 `xyb.news` 都按 web `Response` 的形态写：
+      ```js
+      if (!res || !res.ok) { throw ... }   // res.ok 恒为 undefined（falsy）→ 每次都抛
+      const data = await res.json();       // 宿主返回体上没有 .json() → 即使越过上一步也会抛
+      ```
+      宿主实际返回**普通对象**（`apps/desktop/electron/main/plugin-runtime.ts:339` 签名
+      `Promise<{status,headers,bodyText}>`，`:5612` 语句 `return { status, headers, bodyText }`），
+      既没有 `ok` 也没有 `.json()`。后果：**CT.gov 检索与 PubMed 刷新在应用内 100% 失败**，
+      且失败被归类为 `NETWORK`，界面上看起来像断网——而实测两个站点都返回 HTTP 200。
+    - **为什么测试没抓到**：测试与离线探针的 fake `pi.net.fetch` 用的是 web `Response` 形态
+      （`{ok, status, json()}`），比被测代码更宽松，于是错误写法**全部通过**。
+      教训：**假体必须复刻真实宿主的形态，否则测试只证明「假体自洽」**。
+    - 现契约：两处都改为按状态码判定 `ok`（`typeof res.ok === "boolean" ? res.ok : 200<=status<400`），
+      并优先读 `bodyText` 再 `JSON.parse`（`.json()` 仅作历史/测试兼容）；`bodyText` 非合法 JSON
+      或两种形态都缺失时报 `UPSTREAM_ERROR` 并说明原因，**不得**退回 `NETWORK`。
+    - 回归测试用**真实宿主形态**驱动，并已验证能抓住原缺陷（把旧写法注入回去：
+      `xyb.trials` 由 13 pass 跌至 8 pass / 5 fail，`xyb.news` 由 8 pass 跌至 4 pass / 4 fail）：
+      `apps/desktop/test/xyb-trials-errors.test.mjs`（13 pass）、
+      `apps/desktop/test/xyb-news-fetch.test.mjs`（8 pass）。
+    - 真实网络验证（以 `{status,headers,bodyText}` 形态驱动真实 `fetch`）：
+      `xyb.trials` → CT.gov HTTP 200、69059 字节、**5 条**（NCT07415525 / NCT07692750 / NCT06770439 /
+      NCT07483554 / NCT07066098）；`xyb.news` → NIH HTTP 200、返回 3 条胰腺癌文献。
+    - 修复后 `xyb.news` 0.1.0 → **0.1.1**（`xyb.trials` 0.2.1 不变，同轮修复）。
+
 ---
 
 ## 九、随包分发与数据刷新（v1.8 起）
@@ -393,3 +458,6 @@ git commit                        →  下次打包自动带进 dmg/exe
 | v1.6 | 渠道 4 的**可用性判定与入口守卫加固**（`get_collector_status` 的三个真实缺陷，均在「单独安装 MCP / 全新部署 / 软链接启动」三个场景实测复现）：①`collector_deps` 只测 venv 依赖、看不到采集器脚本缺失，导致 `ready: true` 却必然 ENOENT——新增 `collector_files` 并把 `ready` 收紧为「现在就能抓取」，另设 `quote_read_available` 表达「已归档数据可读」（归档非空时即使不能抓，查询/详情仍完全可用）；②`bootstrap_plan` 原先要求已配置会话，而全新部署恰恰没有 cookie，最需要引导的新用户反而看不到提示——触发条件放宽为「归档为空 + 采集器在 + python 在」，未就绪原因改用 `blockers` 列出、`ready_to_run` 表示可否直接执行；③`isDirectRun` 只比字面路径，macOS（`/tmp`→`/private/tmp`）与 `npm link` 场景下判定失败会**静默退出、exit 0、无任何报错**，现回退 `realpathSync` 比较。新增已知限制第 12、13 条；回归测试 `apps/desktop/test/xyb-chinadrugtrials-parse.test.mjs` 由 6 pass 增至 **9 pass / 0 fail**（含隔离安装、全新部署、软链接启动三例）。未改契约语义与四来源状态枚举。 |
 | v1.7 | **`list_archived` 的两个误读风险修复**（由 IBI343 端到端模拟暴露）：①`limit` 默认 50 且旧返回体不区分「总共就这么多」与「被截断」——实测 `CTR20252528` 在胰腺癌归档排第 114 位，默认调用下按药名翻归档会得出「没有」的错误结论；现返回 `returned_records`/`truncated`，截断时给 `truncation_note` 与 `suggested_limit`；②用 `keywords` 过滤不存在的目录时返回 0 条却不说破，与「归档为空」混为一谈，现返回 `matched_archive: false` 与 `warning`。另确认 `safeKeywordDir` 与 `scraper.py:1134` 的转义规则逐字节一致（连字符→下划线），外部工具建的目录名不落在本 MCP 命名空间内属预期。新增已知限制第 14 条；回归测试由 9 pass 增至 **11 pass / 0 fail**。未改契约语义与四来源状态枚举。 |
 | v1.8 | **渠道 3 改为开箱可用：随包分发本地索引 + 首次启动种子复制**（承载方案经用户确认「初始化构建一次 + 脚本更新」）：①`xyb.trial-sources/manifest.json` 修掉裸命令 `"command": "ctv-mcp-server"`（干净机器上必然 `command not found`），改为 `npx -y ctv-mcp-server@0.1.0`，并通过 `env` 把新增设置 `veevaDataDir` 注入 `CTV_DATA_DIR`（`{ "setting": "veevaDataDir" }`，由 `mcp-config.ts` 的 `resolveMcpRefs` 解析）；②新增 `scripts/slim-db.mjs`（瘦身 + 7 项自检，幂等）与 `scripts/xyb-sync-trial-data.mjs`（瘦身→校验→复制进 `<插件>/data/ctv.db`，默认不覆盖、需显式 `--force`）；③`xyb.trial-sources` 新增 `ensureVeevaSeed()`：首次启动把只读种子复制到 `~/.ctv-mcp/ctv.db`（**只在目标不存在时**，用户刷新结果永不覆盖；失败不阻断加载），因宿主 `pi.fs.writeText` 只收字符串无法搬运 50MB 二进制而使用 `node:fs`（与 `pi.file-manager` 同先例）；④新增测试 `apps/desktop/test/xyb-trial-sources-seed.test.mjs`（6 pass，覆盖已存在不覆盖、无种子降级、真实 50MB 二进制一致性、自定义目录、onLoad 容错）；⑤文档新增第九节「随包分发与数据刷新」，记录只读种子 vs 运行时索引的双份设计、刷新链路、瘦身的两个关键操作约束（必须临时摘 `trg_studies_fts_au`、`is_china` 必须保持不变）与「git 历史 50MB 不可撤销」的风险。`xyb.trial-sources` 0.1.0 → 0.2.0。未改契约语义与四来源状态枚举。 |
+| v1.9 | **修复「Veeva 渠道被 CONFIG_MISSING 整体跳过」并让检索失败原因可区分**（两处均为真实故障）：①v1.8 给 veeva-ctv 加的 `env: {"CTV_DATA_DIR": {"setting": "veevaDataDir"}}` 与设置默认值 `""` 冲突——`resolveMcpRefs()` 见空值即报 `CONFIG_MISSING`，宿主因此**跳过整个 MCP server**（日志 `plugin.mcp.skipped errorCode:CONFIG_MISSING serverId:"veeva-ctv"`），随包的 50MB 种子库完全用不上，「开箱即用」落空；现**删除该 env 块**，让 `ctv-mcp-server` 使用自身默认 `~/.ctv-mcp/`（种子仍由 `ensureVeevaSeed()` 复制到那里），实测修复后 `veeva-ctv` 连上并暴露 12 个工具；②CT.gov 检索失败时插件只抛「试验数据源请求失败」、面板又把一切异常显示成「请检查网络」，导致 5xx / 429 限流 / 宿主进程重启（`PLUGIN_CRASHED`）与断网无法区分——现按状态码区分 `RATE_LIMITED` / `UPSTREAM_ERROR` / `NETWORK` 并在消息中带 `HTTP <status>`，面板 `failureText()` 对六类原因各给可执行提示、未知错误原样显示错误码（新增已知限制第 15 条）；③顺带修复面板两处旧问题：检索时**只传 `terms`、从不传 `condition`**（病种完全依赖插件默认值），以及把 `res.ok === false` 的失败结构当成功渲染。`xyb.trials` 0.2.0 → 0.2.1；新增回归测试 `apps/desktop/test/xyb-trials-errors.test.mjs`（8 pass）。未改契约语义与四来源状态枚举。 |
+| v1.10 | **让助手先走渠道工具、浏览器只作兜底**（由 2026-10-03 的 IBI343 实测故障驱动）：用户问「按渠道汇总 IBI343 的数量」时，助手**没有调用任何渠道工具**，而是用宿主的通用网页抓取工具去抓三个检索**列表页**（`clinicaltrials.gov/search?term=`、`chinadrugtrials.org.cn/search.html?keyword=`、`chictr.org.cn/search?keyword=`），**三次全部失败**——三站检索页均为 JS 渲染，抓回来是空壳。根因是技能 description 只覆盖「找临床试验」「统一查询」这类意图词，未覆盖「按渠道汇总……数量」这类统计口径问法 → 技能未被加载 → 助手不知道有四个渠道。现加**双保险**：①`skills/unified-trial-query.md` 的 description 扩写覆盖统计口径问法，正文新增**第零节「取数优先级」**（优先级表 + 三条补充规则 + 登记号详情页白名单）；②`xyb_trials_search` 与 `xyb_trials_unify` 的工具 description 各自写明优先级，技能未加载时仍生效。同时把 `condition` 的参数语义写进 schema（只填病种，药名填 `terms`——实测 `cond=IBI343` 出 9 条但不聚焦 vs `cond=pancreatic cancer` 出 5 条）。新增已知限制第 16 条。未改契约语义与四来源状态枚举。 |
+| v1.11 | **修复宿主 `pi.net.fetch` 返回形态误用——这是本轮最严重的缺陷**：`xyb.trials` 与 `xyb.news` 都按 web `Response` 使用宿主 fetch（`if (!res.ok)` + `await res.json()`），而宿主返回的是普通对象 `{status,headers,bodyText}`（`plugin-runtime.ts:339` 签名 / `:5612` 返回语句），既无 `ok` 也无 `.json()`——于是 **CT.gov 检索与 PubMed 刷新在应用内 100% 失败**，还被归类成 `NETWORK`，界面上与断网无法区分，而实测两站均 HTTP 200。之所以长期未被发现：测试与离线探针的 fake 用了比被测代码更宽松的 web `Response` 形态，错误写法全部通过（教训：假体必须复刻真实宿主形态）。现改为按状态码判定 `ok`、优先读 `bodyText` 并 `JSON.parse`，解析失败报 `UPSTREAM_ERROR` 不退回 `NETWORK`；新增两组**以真实宿主形态驱动**的回归测试（`xyb-trials-errors.test.mjs` 13 pass、`xyb-news-fetch.test.mjs` 8 pass），并已验证能抓住原缺陷（注入旧写法分别跌至 8 pass/5 fail 与 4 pass/4 fail）。真实网络验证：CT.gov 200/69059 字节/5 条；NIH 200/3 条文献。新增已知限制第 17 条。`xyb.news` 0.1.0 → 0.1.1。未改契约语义与四来源状态枚举。 |
