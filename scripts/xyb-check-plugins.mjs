@@ -28,18 +28,19 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_DIR = join(REPO, "apps", "desktop", "resources", "plugins");
 
-// docs/plugin-development.md §7 权限表
+// docs/plugin-development.md §7 权限表 + 宿主 plugin-runtime.ts 中已实现的
+// 模型/补全权限（models.list 中风险、agent.complete 高风险）。
 const VALID_PERMISSIONS = new Set([
   // 低
   "ui.panel", "ui.view", "ui.theme", "notify",
   // 中
   "clipboard.read", "clipboard.write", "fs.read", "shell.openExternal",
   "background.service", "bus.publish", "bus.subscribe",
-  "audio.playback.background", "keyboard.globalShortcut",
+  "audio.playback.background", "keyboard.globalShortcut", "models.list",
   // 高
   "fs.write", "fs.delete", "agent.tool.register", "agent.prompt.inject",
   "net.fetch", "mcp.server.local", "mcp.server.remote",
-  "audio.capture.background", "net.websocket",
+  "audio.capture.background", "net.websocket", "agent.complete",
 ]);
 
 // docs/plugin-development.md §6.8 固定图标 token

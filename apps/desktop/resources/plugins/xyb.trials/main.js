@@ -8,6 +8,8 @@
  * 因此插件内置中文→英文术语映射，把患者输入的口语词转成可检索的英文。
  */
 
+const unified = require("./lib/unified.js");
+
 const DISCLAIMER = "以下为公开试验信息整理，供参考，不构成医疗建议；是否符合入组条件需由研究医生判断。";
 
 const CTGOV_SEARCH = "https://clinicaltrials.gov/api/v2/studies";
@@ -216,15 +218,48 @@ async function onLoad() {
     },
     execute: async (args) => searchTrials(args),
   });
+
+  // —— F2：四来源统一查询 ——
+  // 助手按「四来源统一检索」技能逐源取数后，把各来源原始结果交给本工具做
+  // 规范化、保守合并与去重。合并逻辑是纯函数（lib/unified.js），可离线验证。
+  await pi.agent.registerTool({
+    name: "xyb_trials_unify",
+    description:
+      "把多个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记平台）的原始结果合并成统一清单。" +
+      "只按规范化登记号做保守去重，标题或药物相似不会被合并；" +
+      "未执行或失败的来源会保留自己的状态，不会被当作「没有结果」。" +
+      "调用前请先分别调用各来源工具取数。仅整理公开信息，不构成医疗建议。",
+    risk: "low",
+    schema: {
+      type: "object",
+      properties: {
+        condition: { type: "string", description: "病种（可选）" },
+        keywords: { type: "string", description: "本次使用的关键词（可选）" },
+        sourceResults: {
+          type: "object",
+          description:
+            "逐来源结果。键为 clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials。" +
+            "值为 { state, records?, explanation?, fetchedAt? }；" +
+            "state 取 SUCCESS / NO_RESULTS / NOT_ENABLED / NEEDS_SETUP / INDEX_EMPTY / " +
+            "SESSION_EXPIRED / CHALLENGE_REQUIRED / TIMEOUT / FAILED。" +
+            "某个来源没跑就不要填它，或明确填 NOT_ENABLED——不要用空数组假装「没有结果」。",
+        },
+      },
+      required: ["sourceResults"],
+    },
+    execute: async (args) => unified.buildResult(args || {}),
+  });
 }
 
 async function onUnload() {
   await pi.commands.unregister("xyb.trials.search");
   await pi.agent.unregisterTool("xyb_trials_search");
+  await pi.agent.unregisterTool("xyb_trials_unify");
 }
 
 async function onPanelInvoke(channel, payload) {
   if (channel === "xyb.trials.search") return searchTrials(payload);
+  if (channel === "xyb.trials.unify") return unified.buildResult(payload || {});
   const err = new Error(`channel not supported: ${channel}`);
   err.code = "NOT_FOUND";
   throw err;

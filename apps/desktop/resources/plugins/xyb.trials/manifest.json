@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "xyb.trials",
   "name": "找试验",
-  "version": "0.1.0",
-  "description": "按患者自身情况检索临床试验，给出候选清单、匹配理由与来源链接。",
+  "version": "0.2.0",
+  "description": "按患者自身情况检索临床试验，可统一整理国内外四个来源的候选清单、来源状态与原始链接。",
   "main": "main.js",
   "contributes": {
     "views": [
@@ -22,7 +22,7 @@
         "keywords": ["临床试验", "入组", "试验", "trial", "NCT", "ChiCTR"]
       }
     ],
-    "skills": ["skills/trial-match.md"],
+    "skills": ["skills/trial-match.md", "skills/unified-trial-query.md"],
     "agentTools": [
       {
         "name": "xyb_trials_search",
@@ -34,6 +34,23 @@
             "condition": { "type": "string", "description": "病种（英文更准），默认 pancreatic cancer" },
             "terms": { "type": "string", "description": "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」" }
           }
+        }
+      },
+      {
+        "name": "xyb_trials_unify",
+        "description": "把多个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记平台）的原始结果合并成统一清单。只按规范化登记号保守去重，标题或药物相似不会被合并；未执行或失败的来源保留自身状态，不会被当作「没有结果」。调用前请先分别调用各来源工具取数。仅整理公开信息，不构成医疗建议。",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "condition": { "type": "string", "description": "病种（可选）" },
+            "keywords": { "type": "string", "description": "本次使用的关键词（可选）" },
+            "sourceResults": {
+              "type": "object",
+              "description": "逐来源结果。键为 clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials；值为 { state, records?, explanation?, fetchedAt? }。state 取 SUCCESS / NO_RESULTS / NOT_ENABLED / NEEDS_SETUP / INDEX_EMPTY / SESSION_EXPIRED / CHALLENGE_REQUIRED / TIMEOUT / FAILED。某来源没跑就不填或明确填 NOT_ENABLED，不要用空数组假装「没有结果」。"
+            }
+          },
+          "required": ["sourceResults"]
         }
       }
     ],
