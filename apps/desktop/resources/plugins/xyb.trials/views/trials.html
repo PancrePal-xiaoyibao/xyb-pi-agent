@@ -174,21 +174,63 @@
         }
       }
 
+      // 失败时如实说明原因。此处曾把一切错误都显示成「请检查网络」，
+      // 导致超时、宿主重启、数据源返回异常等情况无从判断——面板不再吞掉原因。
+      function failureText(err) {
+        const code = (err && err.code) || (err && err.data && err.data.code) || "";
+        const raw = (err && (err.message || err.detail)) || "";
+        if (code === "NETWORK" || /NETWORK/i.test(raw)) {
+          return "连不上 ClinicalTrials.gov。可能是网络不通或需要代理，稍后可以重试。";
+        }
+        if (code === "RATE_LIMITED") {
+          return "ClinicalTrials.gov 暂时限制了这个 IP 的请求频率，等一两分钟再试。";
+        }
+        if (code === "UPSTREAM_ERROR") {
+          return "ClinicalTrials.gov 自己返回了错误（不是你的网络问题），稍后重试。";
+        }
+        if (code === "TIMEOUT" || /timed? ?out/i.test(raw)) {
+          return "ClinicalTrials.gov 响应超时，稍后重试通常就好。";
+        }
+        if (code === "PLUGIN_CRASHED" || /crash/i.test(raw)) {
+          return "插件进程刚刚重启过（可能被系统或手动结束）。请再点一次「检索」。";
+        }
+        if (code === "NO_SOURCE") {
+          return "插件的试验数据源被关掉了，请在插件设置里开启 ClinicalTrials.gov。";
+        }
+        if (code === "NOT_FOUND") {
+          return "面板与插件版本不一致，重启应用后再试。";
+        }
+        // 未知错误也把原始信息显示出来，便于排查；不要退回成笼统的「网络问题」。
+        const detail = raw ? "：" + String(raw).slice(0, 300) : "";
+        return "检索失败" + (code ? "（" + code + "）" : "") + detail;
+      }
+
       async function doSearch() {
         const btn = document.getElementById("go");
         const q = document.getElementById("q").value.trim();
         btn.disabled = true;
+        const list = document.getElementById("list");
         try {
-          const res = await bridge.invoke("xyb.trials.search", { terms: q || undefined });
+          const res = await bridge.invoke("xyb.trials.search", {
+            terms: q || undefined,
+            // 面板固定胰腺癌场景，显式传入病种；否则 main.js 会退到默认值，
+            // 而默认值一旦调整，面板与助手的行为就会不一致。
+            condition: "pancreatic cancer",
+          });
+          // 插件返回值本身也可能是失败结构（渠道不可用等），不只是抛异常。
+          if (res && res.ok === false) {
+            list.textContent = "";
+            list.appendChild(el("div", "empty", failureText({ code: res.code || res.reason, message: res.error })));
+            return;
+          }
           let note = "";
           if (res && res.dropped) {
             note = "「" + res.dropped + "」这几个词暂时无法转成检索词，结果里没有包含它们。可以试试写药物名、治疗方式或基因名。";
           }
           render(res && res.items, note);
         } catch (e) {
-          const list = document.getElementById("list");
           list.textContent = "";
-          list.appendChild(el("div", "empty", "检索失败，请检查网络后在设置里确认数据源已开启。"));
+          list.appendChild(el("div", "empty", failureText(e)));
         } finally {
           btn.disabled = false;
         }

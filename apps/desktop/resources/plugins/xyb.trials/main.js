@@ -167,13 +167,46 @@ async function searchTrials(input) {
     headers: { Accept: "application/json" },
     timeoutMs: 20000,
   });
-  if (!res || !res.ok) {
-    const err = new Error("试验数据源请求失败");
-    err.code = "NETWORK";
+  // 关键：宿主返回的是 { status, headers, bodyText } —— 普通对象，**没有 ok，也没有 .json()**。
+  // 详见 apps/desktop/electron/main/plugin-runtime.ts:339（服务签名）与 :5612（返回体）。
+  // 曾经按 web Response 写成 `if (!res.ok)` + `await res.json()`：
+  // res.ok 恒为 undefined（falsy）导致**每次调用都在这里抛错**，
+  // 且错误被归因成 NETWORK，看起来像网络问题；实测 CT.gov 明明返回 HTTP 200。
+  const status = (res && (res.status || res.statusCode)) || 0;
+  const ok = res && (typeof res.ok === "boolean" ? res.ok : status >= 200 && status < 400);
+  if (!ok) {
+    // 曾经只抛一句「试验数据源请求失败」，面板也把它显示成「请检查网络」，
+    // 于是一次 5xx、限流或宿主重启看起来都和断网一样。断言里带上状态码，
+    // 让调用方（助手或面板）能区分「站点出错」和「本机网络不通」。
+    const err = new Error(
+      status
+        ? `试验数据源返回 HTTP ${status}`
+        : "试验数据源请求失败（没有拿到响应，可能是网络不通或插件进程刚重启）",
+    );
+    err.code = status === 429 ? "RATE_LIMITED" : status >= 500 ? "UPSTREAM_ERROR" : "NETWORK";
+    err.status = status;
     throw err;
   }
 
-  const data = await res.json();
+  // 兼容两种宿主返回形态：{ bodyText } 是真实宿主，.json() 仅为历史/测试假体。
+  let data;
+  if (typeof res.json === "function") {
+    data = await res.json();
+  } else if (typeof res.bodyText === "string") {
+    try {
+      data = JSON.parse(res.bodyText);
+    } catch (e) {
+      const err = new Error("试验数据源返回的内容不是合法 JSON");
+      err.code = "UPSTREAM_ERROR";
+      err.status = status;
+      throw err;
+    }
+  } else {
+    const err = new Error("试验数据源返回体无法解析（既没有 bodyText 也没有 json()）");
+    err.code = "UPSTREAM_ERROR";
+    err.status = status;
+    throw err;
+  }
   const studies = (data && data.studies) || [];
   return {
     items: studies.map(normalizeStudy),
@@ -207,13 +240,22 @@ async function onLoad() {
   await pi.agent.registerTool({
     name: "xyb_trials_search",
     description:
-      "按病种与关键词检索公开临床试验（ClinicalTrials.gov），返回试验编号、状态、分期与来源链接。支持中文关键词（内部会转成英文检索词）。仅返回公开信息，不构成医疗建议。",
+      "检索 ClinicalTrials.gov 上的公开临床试验，返回试验编号、状态、分期与来源链接。支持中文关键词（内部会转成英文检索词）。" +
+      "凡是查临床试验（含「有多少个试验」「按渠道汇总数量」）都优先用本工具，不要用浏览器抓 clinicaltrials.gov/search 这类检索页——" +
+      "那是 JS 渲染的，抓取会失败，而本工具实测稳定返回结果。浏览器只适合在已拿到具体 NCT 号后打开详情页补看。" +
+      "仅返回公开信息，不构成医疗建议。",
     risk: "low",
     schema: {
       type: "object",
       properties: {
-        condition: { type: "string", description: "病种（英文更准），默认 pancreatic cancer" },
-        terms: { type: "string", description: "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」" },
+        condition: {
+          type: "string",
+          description: "病种，英文更准，例如 pancreatic cancer。只填病种，不要把药名填在这里。",
+        },
+        terms: {
+          type: "string",
+          description: "关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」；药物名/靶点填这里，例如 IBI343。",
+        },
       },
     },
     execute: async (args) => searchTrials(args),
@@ -228,7 +270,10 @@ async function onLoad() {
       "把多个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记平台）的原始结果合并成统一清单。" +
       "只按规范化登记号做保守去重，标题或药物相似不会被合并；" +
       "未执行或失败的来源会保留自己的状态，不会被当作「没有结果」。" +
-      "调用前请先分别调用各来源工具取数。仅整理公开信息，不构成医疗建议。",
+      "调用前请先分别调用各来源工具取数——每个来源都要真的调用一次它的渠道工具，" +
+      "不要用网页抓取去替代渠道工具（ChiCTR 与 CDE 的检索页是 JS 渲染的，抓取会失败；" +
+      "这两家请用各自的 search_trials，取详情用 get_trial_detail）。" +
+      "本工具只做合并，不取数。仅整理公开信息，不构成医疗建议。",
     risk: "low",
     schema: {
       type: "object",
@@ -269,5 +314,5 @@ module.exports = {
   onLoad,
   onUnload,
   onPanelInvoke,
-  _internals: { normalizeStudy, buildQuery, translateTerms },
+  _internals: { normalizeStudy, buildQuery, translateTerms, searchTrials },
 };

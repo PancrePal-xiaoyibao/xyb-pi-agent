@@ -19,6 +19,14 @@ function daysAgoISO(n) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * 把宿主 `pi.net.fetch` 的返回体解析成 JSON。
+ *
+ * 宿主返回的是 `{ status, headers, bodyText }` —— 普通对象，**没有 `ok`，也没有 `.json()`**
+ * （见 apps/desktop/electron/main/plugin-runtime.ts:339 与 :5612）。
+ * 曾经按 web Response 写成 `if (!res.ok)` + `await res.json()`：`res.ok` 恒为 undefined
+ * 导致**每次调用都在这里抛错**，还被归因成「网络问题」——实测 PubMed 明明是 HTTP 200。
+ */
 async function fetchJson(url) {
   // pi.net.fetch 只接受一个对象参数 { url, method?, headers?, body?, timeoutMs? }。
   // 写成 pi.net.fetch(url, {...}) 会让 input.url 为 undefined，
@@ -29,12 +37,32 @@ async function fetchJson(url) {
     headers: { Accept: "application/json" },
     timeoutMs: 20000,
   });
-  if (!res || !res.ok) {
-    const err = new Error("数据源请求失败");
-    err.code = "NETWORK";
+  const status = (res && (res.status || res.statusCode)) || 0;
+  const ok = res && (typeof res.ok === "boolean" ? res.ok : status >= 200 && status < 400);
+  if (!ok) {
+    const err = new Error(
+      status ? `数据源返回 HTTP ${status}` : "数据源请求失败（没有拿到响应）",
+    );
+    err.code = status === 429 ? "RATE_LIMITED" : status >= 500 ? "UPSTREAM_ERROR" : "NETWORK";
+    err.status = status;
     throw err;
   }
-  return res.json();
+  // 兼容两种返回形态：bodyText 是真实宿主，.json() 仅为历史/测试假体。
+  if (typeof res.json === "function") return res.json();
+  if (typeof res.bodyText === "string") {
+    try {
+      return JSON.parse(res.bodyText);
+    } catch (e) {
+      const err = new Error("数据源返回的内容不是合法 JSON");
+      err.code = "UPSTREAM_ERROR";
+      err.status = status;
+      throw err;
+    }
+  }
+  const err = new Error("数据源返回体无法解析（既没有 bodyText 也没有 json()）");
+  err.code = "UPSTREAM_ERROR";
+  err.status = status;
+  throw err;
 }
 
 /** 拉取最近 N 天的文献条目。 */
@@ -105,4 +133,4 @@ async function onPanelInvoke(channel, payload) {
   throw err;
 }
 
-module.exports = { onLoad, onUnload, onPanelInvoke, _internals: { fetchProgress } };
+module.exports = { onLoad, onUnload, onPanelInvoke, _internals: { fetchProgress, fetchJson } };
