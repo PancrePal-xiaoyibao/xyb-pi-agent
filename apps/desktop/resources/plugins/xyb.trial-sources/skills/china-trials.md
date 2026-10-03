@@ -76,13 +76,24 @@ description: 当需要调用中国与区域试验数据源时使用——ChiCTR�
 
 ## 三、Veeva CTV
 
-接入方式：MCP 服务 `veeva-ctv`，需本机已安装 `ctv-mcp-server`（`npm link` 或全局安装）。
+接入方式：MCP 服务 `veeva-ctv`，由 `npx -y ctv-mcp-server@0.1.0` 拉起（**开箱可用，无需你手动装包**）。
 
-### 必须先建索引
+> ✅ **开箱即有本地索引（2026-10-04 起）**：应用随包分发一份 Veeva 本地索引种子（1352 条研究），首次启动时自动复制到 `~/.ctv-mcp/ctv.db`，因此**不需要用户先建索引**。索引是**本机快照**，不是实时站点。
+>
+> 用户可自行刷新（`sync_sitemap` / `import_csv_export` / `backfill_details`），刷新结果写在同一位置，**不会被种子覆盖**。数据目录可用插件设置「Veeva CTV 数据目录」更改。
+>
+> ⚠️ **检索有已知缺口**：全文检索用的 `studies_fts` 表**漏收了经 graphql 途径入库的记录**。表现为**库里明明有 `YL201` 8 条，`search_studies {keyword:"YL201"}` 却 0 命中**。
+>
+> 因此：
+> - 0 命中时**必须**按服务返回的 `notice` 说「**本地索引中未命中**」并附 coverage，**不得**说「没有相关研究」；
+> - 可用 `get_study_detail {study_id: "<NCT/UTN>"}` **绕过 FTS 直查**（实测缺失记录详情可正常取到）；
+> - 修索引可用服务自身的 `reindexFts` 同款 SQL 重建缺失行（实测重建后 FTS 193 → 210、`YL201` 命中 8 条），**操作前先备份 `ctv.db`**。
+
+### 索引从哪来
 
 检索走**本地索引**，不是实时站点（站点 `robots.txt` 禁止抓 `/study-search`）。索引为空时检索返回 `INDEX_EMPTY`，不是「没有结果」。
 
-建索引两条路：
+随包分发的种子索引已覆盖常见检索需求。需要**更新到最新**时，有两条路：
 
 - `import_csv_export`：导入从站点导出的 CSV（35 列）。参数 `file_path`（**绝对路径**必填）；可选 `backfill_details` 回源补齐全字段
 - `sync_sitemap`：从官方 sitemap 枚举 slug 池（60 分片，约 597,907 条）。参数 `max_shards` 控制本次拉取片数，**每片约 1 万条，别一次拉满**

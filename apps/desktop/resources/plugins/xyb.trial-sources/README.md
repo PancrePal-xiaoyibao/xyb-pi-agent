@@ -42,14 +42,31 @@
 
 ### veeva-ctv（Veeva CTV）
 
-声明为裸命令 `ctv-mcp-server`，需本机已安装：
+> ✅ **开箱可用（2026-10-04 起）**
+>
+> MCP 服务由 `npx -y ctv-mcp-server@0.1.0`（MIT）拉起，**用户无需手动装包**。
+>
+> 应用随包分发一份 Veeva 本地索引种子（1352 条研究），首次启动时自动复制到
+> `~/.ctv-mcp/ctv.db`，因此**不需要用户先建索引**。种子是**只读**的随包数据；
+> 用户刷新（`sync_sitemap` / `import_csv_export` / `backfill_details`）写在同一位置，
+> **不会被种子覆盖**。数据目录可用插件设置「Veeva CTV 数据目录」更改。
+>
+> ⚠️ **但检索有一个已知缺口，务必注意**：`search_studies` 的全文检索依赖 `studies_fts`
+> 表，而**经 graphql 途径入库的记录可能没有被写进 FTS**。曾实测 `studies` 有 210 条、
+> `studies_fts` 只有 193 条，**缺失的都是 `source='graphql'` 的记录**（20 条里缺 17 条）。
+> 后果是：**库里明明有 `YL201` 8 条，`search_studies {keyword:"YL201"}` 却返回 0 命中**——
+> 不是没有数据，是全文索引漏收了。
+>
+> 因此呈现该渠道时：
+> - 0 命中**必须**按服务返回的 `notice` 如实说明「**本地索引中未命中**」，并附上 coverage
+>   （`indexed_studies` / `detail_coverage`）；**不得**表述为「没有相关研究」。
+> - 可用 `get_study_detail {study_id: "<NCT 或 UTN>"}` 直查**绕过 FTS**——实测缺失记录的详情
+>   **能正常取到**，数据完好。
+> - 需要修索引时，用服务自身的 `reindexFts` 同款 SQL 重建缺失行即可（已实测有效：
+>   重建后 `studies_fts` 193 → 210，`YL201` 命中 8 条）。**操作前务必备份 `ctv.db`。**
 
-```bash
-cd <ctv-mcp-server 项目目录>
-npm link          # 或在有权限的环境下全局安装
-```
-
-**必须先建立本地索引**，否则检索返回 `INDEX_EMPTY`（不是「没有结果」）。
+**索引本身可用**：`~/.ctv-mcp/ctv.db` 已是新 schema（46 列含 `start_date`），
+早先记录的旧 schema 故障（18 列、`no such column: start_date`）**在当前库上不复现**。
 建索引两条路：`import_csv_export` 导入站点导出的 CSV，或 `sync_sitemap` 枚举 slug 池。
 
 检索走本地索引而非实时站点，因为站点 `robots.txt` 禁止抓 `/study-search`。

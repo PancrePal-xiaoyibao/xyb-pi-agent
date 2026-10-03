@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "xyb.trial-sources",
   "name": "中国与区域试验来源",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）、Veeva CTV 与中国药物临床试验登记与信息公示平台。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
   "main": "main.js",
   "contributes": {
@@ -35,7 +35,11 @@
         "id": "veeva-ctv",
         "label": "Veeva CTV（本地索引）",
         "transport": "stdio",
-        "command": "ctv-mcp-server"
+        "command": "npx",
+        "args": ["-y", "ctv-mcp-server@0.1.0"],
+        "env": {
+          "CTV_DATA_DIR": { "setting": "veevaDataDir" }
+        }
       },
       {
         "id": "chinadrugtrials",
@@ -46,6 +50,15 @@
     ]
   },
   "permissions": ["ui.view", "agent.prompt.inject", "mcp.server.local"],
+  "settings": [
+    {
+      "key": "veevaDataDir",
+      "type": "string",
+      "title": "Veeva CTV 数据目录",
+      "description": "Veeva CTV 本地索引（ctv.db）所在目录。留空（推荐）使用 ~/.ctv-mcp；首次启动时若无索引，会自动复制随应用分发的种子数据到这里，之后你的刷新结果也写在这里。",
+      "default": ""
+    }
+  ],
   "engines": {
     "piDesktop": ">=0.1.0"
   },
