@@ -64,6 +64,16 @@
              border-radius: 999px; padding: 1px 8px; }
       .name { color: var(--ink); font-size: 12.5px; }
       .meta { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+      .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .status { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
+      .status.error { color: #c0392b; }
+      pre.summary {
+        margin: 10px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px;
+        background: var(--soft); color: var(--ink); font-size: 12.5px; line-height: 1.8;
+        white-space: pre-wrap; word-break: break-word; max-height: 380px; overflow: auto;
+        font-family: inherit;
+      }
+      .coverage { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
     </style>
   </head>
   <body>
@@ -72,11 +82,18 @@
         <h1>我的资料</h1>
         <div class="hint">把检查报告和就诊资料放在一个本地文件夹里，小胰宝帮你有条理地存好。</div>
       </div>
-      <button class="btn primary" id="import">导入资料</button>
+      <div class="row">
+        <button class="btn" id="organize">整理病案</button>
+        <button class="btn" id="summary">生成病情摘要</button>
+        <button class="btn primary" id="import">导入资料</button>
+      </div>
     </div>
 
     <div class="disclaimer">
-      资料只存在你自己的电脑上。需要让 AI 帮忙看时，姓名、电话等会先被隐藏。
+      资料只存在你自己的电脑上。<b>「整理病案」全程在本机完成</b>：只读文本、自动分类、排出时间线，
+      不联网、不调用模型。<b>「生成病情摘要」</b>才会先请你亲自选一次资料库目录，
+      再把隐藏了电话、身份证与医院名的文本发给<b>你自己配置的模型</b>（会消耗你的模型额度）。
+      规则脱敏无法覆盖所有姓名，请自行确认内容可以外发。
     </div>
 
     <div class="section">
@@ -87,6 +104,18 @@
     <div class="section">
       <div class="section-title">资料分类</div>
       <ul class="list" id="buckets"></ul>
+    </div>
+
+    <div class="section">
+      <div class="section-title">病案整理</div>
+      <div class="status" id="organize-status"></div>
+      <div id="organize-result"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">病情摘要</div>
+      <div class="status" id="summary-status"></div>
+      <div id="summary-result"></div>
     </div>
 
     <script>
@@ -153,6 +182,214 @@
           if (res && res.buckets) renderBuckets(res.buckets);
         } catch (e) {
           /* 用户取消或权限未授予，静默处理 */
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      // ---- 病案整理：本机确定性整理 → 预览 → 用户确认后保存 ----
+      // 与「生成病情摘要」的关键差别：不联网、不调用模型、不消耗额度。
+
+      let lastArchive = "";
+
+      function setOrganizeStatus(message, isError) {
+        const el = document.getElementById("organize-status");
+        el.textContent = message || "";
+        el.className = isError ? "status error" : "status";
+      }
+
+      const ORGANIZE_FAILURE_TEXT = {
+        NO_VAULT: "请先在插件设置里选择「资料库位置」。",
+        CANCELLED: "已取消整理。",
+        EMPTY_VAULT: "这个目录里没有找到资料。请换一个目录，或先导入资料。",
+      };
+
+      function renderOrganizeResult(res) {
+        const el = document.getElementById("organize-result");
+        el.textContent = "";
+        lastArchive = (res && res.markdown) || "";
+        if (!lastArchive) return;
+
+        const pre = document.createElement("pre");
+        pre.className = "summary";
+        pre.textContent = lastArchive;
+        el.appendChild(pre);
+
+        const archive = res.archive || {};
+        const coverage = document.createElement("div");
+        coverage.className = "coverage";
+        coverage.textContent =
+          `共 ${archive.totalCount || 0} 份资料：已解析 ${archive.parsedCount || 0} 份，` +
+          `未解析 ${archive.unparsedCount || 0} 份。` +
+          (res.readErrors ? `读取失败 ${res.readErrors} 份。` : "") +
+          "本档案只建立索引（分类、时间线、缺口），不复制原件正文。";
+        el.appendChild(coverage);
+
+        // 未解析资料如实列出，避免让人以为「整理过就等于都读过了」
+        const unparsed = archive.unparsedFiles || [];
+        if (unparsed.length) {
+          const detail = document.createElement("div");
+          detail.className = "coverage";
+          detail.textContent =
+            "未能解析：" +
+            unparsed
+              .slice(0, 8)
+              .map((f) => `${f.sourceName}（${f.extractionStatus}）`)
+              .join("、") +
+            (unparsed.length > 8 ? ` 等 ${unparsed.length} 份` : "");
+          el.appendChild(detail);
+        }
+
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.marginTop = "10px";
+
+        const save = document.createElement("button");
+        save.className = "btn primary";
+        save.textContent = "保存到资料库";
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          try {
+            const saved = await bridge.invoke("xyb.records.organize.save", {
+              markdown: lastArchive,
+            });
+            if (saved && saved.ok) {
+              setOrganizeStatus(`已保存：${saved.path}（可在资料库里查看）`);
+              save.replaceWith(Object.assign(document.createElement("span"), {
+                className: "meta",
+                textContent: "已保存",
+              }));
+            } else {
+              setOrganizeStatus("保存失败，请确认资料库目录可写。", true);
+              save.disabled = false;
+            }
+          } catch (e) {
+            setOrganizeStatus("保存失败：" + (e && e.message ? e.message : "未知错误"), true);
+            save.disabled = false;
+          }
+        });
+
+        const note = document.createElement("span");
+        note.className = "meta";
+        note.textContent = "保存前请先自己看一遍分类和时间线是否正确。";
+
+        row.append(save, note);
+        el.appendChild(row);
+      }
+
+      document.getElementById("organize").addEventListener("click", async () => {
+        const btn = document.getElementById("organize");
+        btn.disabled = true;
+        lastArchive = "";
+        document.getElementById("organize-result").textContent = "";
+        setOrganizeStatus("正在本机整理资料，请稍候……（不会联网、不会调用模型）");
+        try {
+          const res = await bridge.invoke("xyb.records.organize", {});
+          if (res && res.ok) {
+            setOrganizeStatus("整理完成。分类与时间线如有出入，请以原件为准。");
+            renderOrganizeResult(res);
+            if (res.archive && res.archive.buckets) renderBuckets(res.archive.buckets);
+          } else {
+            const reason = (res && res.reason) || "UNKNOWN";
+            setOrganizeStatus(ORGANIZE_FAILURE_TEXT[reason] || `未能整理（${reason}）。`, true);
+          }
+        } catch (e) {
+          setOrganizeStatus("整理失败：" + (e && e.message ? e.message : "未知错误"), true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      // ---- 病情摘要：生成 → 预览 → 用户确认后保存 ----
+
+      let lastSummary = "";
+
+      function setStatus(message, isError) {
+        const el = document.getElementById("summary-status");
+        el.textContent = message || "";
+        el.className = isError ? "status error" : "status";
+      }
+
+      const FAILURE_TEXT = {
+        NO_VAULT: "请先在插件设置里选择「资料库位置」。",
+        CANCELLED: "已取消，未发送任何内容给模型。",
+        EMPTY_VAULT: "这个目录里没有可读取的文本文档（.txt/.md）。扫描件与图片暂不支持自动解析。",
+        NO_MODEL: "没有可用模型，请先在设置里配置一个模型。",
+        MODEL_ERROR: "模型调用失败，请稍后重试或检查模型配置。",
+      };
+
+      function renderSummaryResult(res) {
+        const el = document.getElementById("summary-result");
+        el.textContent = "";
+        lastSummary = (res && res.text) || "";
+        if (!lastSummary) return;
+
+        const pre = document.createElement("pre");
+        pre.className = "summary";
+        pre.textContent = lastSummary;
+        el.appendChild(pre);
+
+        const coverage = document.createElement("div");
+        coverage.className = "coverage";
+        coverage.textContent =
+          `依据 ${res.sourceCount} 份文本资料生成` +
+          `（未解析 ${res.skippedCount} 份，扫描件/图片/表格暂不解析）` +
+          (res.truncated ? "；资料较长，已按长度上限截断。" : "。") +
+          `模型：${res.modelKey || "未知"}`;
+        el.appendChild(coverage);
+
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.marginTop = "10px";
+
+        const save = document.createElement("button");
+        save.className = "btn primary";
+        save.textContent = "保存到资料库";
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          try {
+            const saved = await bridge.invoke("xyb.records.summary.save", { text: lastSummary });
+            if (saved && saved.ok) {
+              setStatus(`已保存：${saved.path}（可在资料库里查看）`);
+              save.replaceWith(Object.assign(document.createElement("span"), {
+                className: "meta",
+                textContent: "已保存",
+              }));
+            } else {
+              setStatus("保存失败，请确认资料库目录可写。", true);
+              save.disabled = false;
+            }
+          } catch (e) {
+            setStatus("保存失败：" + (e && e.message ? e.message : "未知错误"), true);
+            save.disabled = false;
+          }
+        });
+
+        const note = document.createElement("span");
+        note.className = "meta";
+        note.textContent = "保存前请先自己读一遍内容。";
+
+        row.append(save, note);
+        el.appendChild(row);
+      }
+
+      document.getElementById("summary").addEventListener("click", async () => {
+        const btn = document.getElementById("summary");
+        btn.disabled = true;
+        lastSummary = "";
+        document.getElementById("summary-result").textContent = "";
+        setStatus("正在读取资料并生成摘要，请稍候……");
+        try {
+          const res = await bridge.invoke("xyb.records.summary", {});
+          if (res && res.ok) {
+            setStatus("摘要已生成。请核对内容后再决定是否保存。");
+            renderSummaryResult(res);
+          } else {
+            const reason = (res && res.reason) || "UNKNOWN";
+            setStatus(FAILURE_TEXT[reason] || `未能生成摘要（${reason}）。`, true);
+          }
+        } catch (e) {
+          setStatus("生成摘要失败：" + (e && e.message ? e.message : "未知错误"), true);
         } finally {
           btn.disabled = false;
         }
