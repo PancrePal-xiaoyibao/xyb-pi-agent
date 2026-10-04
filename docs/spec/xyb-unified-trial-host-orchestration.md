@@ -367,17 +367,27 @@ WHO ICTRP（§15）是本 SPEC 生效后的**第一个真实新渠道**。它同
 
 **查询路径与更新路径必须分离**：扇出只读本机数据（§4.3），因此不需要授权；只有更新才可能联网与写盘。这样「有副作用」不再阻断查询，同时副作用仍然被披露与限流。
 
-### 7.4 种子内容红线（CDE 种子特有，必须执行）
+### 7.4 种子内容红线（随包种子通用，必须执行）
 
 > **修订记录（2026-10-04）：** 本节原名「脱敏红线」，其依据是把 CDE 数据当作需脱敏的非公开数据。用户已明确：**该数据集为公开合规数据，隐私不作为约束因素**。因此个人信息类限制整体移除；保留的两条（凭据、原始留档）依据分别是**安全**与**体量/结构化**，与隐私无关。
+>
+> **适用范围修订（2026-10-04 晚）：** 该判定初版只写在「CDE 种子特有」小节里，措辞是单数的「该数据集」。此后 ChiCTR（468 条）与 WHO ICTRP（6262 条）两个种子也随包分发，而原文没有明确它们是否同样豁免 —— 这是一个**范围缺口**：后来者可能以为只有 CDE 被豁免，也可能以为默认豁免。**ChiCTR 种子含联系信息是实测事实**：468/468 条带 `申请注册联系人电子邮件` 与 `研究负责人电子邮件`，另有 417 条含手机号、`伦理委员会联系人邮箱` 133 条。用户已确认同一个判定适用于**全部三个随包种子** —— 它们都是各登记处公开发布页面/导出的一部分，联系人与研究者字段随之公开，**隐私不作为种子筛选条件**。为免歧义，本节标题已从「CDE 种子特有」改为「随包种子通用」。
+
+三处种子的体积与留档现状（实测，均已在跑 `scripts/xyb-sync-trial-json-seeds.mjs` 时核对）：
+
+| 种子 | 结构化（入种子） | 原始留档（不入种子） | 说明 |
+|---|---|---|---|
+| ChiCTR（468 条） | 3.9M（`records[].fields`，76 个结构化键） | `raw_text` 4.8M + `html/` 66M | 原稿 11.3M 有 42% 是 `raw_text`；剔除后可查询字段一个不少 |
+| CDE（139 条） | 7.6M（`json/` 139 个文件） | `raw/` 10M、`word/` **90M** | 留档占归档 **93%** 且不可查询 |
+| WHO ICTRP（6262 条） | 10.6M（保留约 32 个字段） | 上游快照原稿 42.4M | 裁剪率 75%；**归因字段一个都不能裁**（`attribution` / `terms_notice` / `provenance.ictrp_export_date` 缺一即视为坏数据，详见 §15.3.8） |
 
 CDE 归档目前包含站点**原始响应留档**：`output/<关键词>/raw/*_detail.html`（单条约 80–110KB）与 `word/*.source.doc`（单条约 363–577KB）。这些**不得**进种子。种子只允许包含结构化 `json/`，且必须满足：
 
 - **不含** Cookie、会话凭据、`config.json` 内容或任何认证材料。（**依据：安全。** 泄露凭据会危及用户本人的站点会话，与数据是否公开无关。）
-- **不含**站点原始响应留档（`raw/`、`word/*.source.doc`）。（**依据：体量与结构化。** 实测胰腺癌数据集 `json/` 7.8M、`raw/` 10M、`word/` **90M**，留档占了 93% 的体积且不可查询。）
+- **不含**站点原始响应留档（ChiCTR 的 `raw_text` / `html/`、CDE 的 `raw/` 与 `word/*.source.doc`）。（**依据：体量与结构化。** 上表三条种子的留档分别是 42%、93%、75%，且全部不可查询。）
 - 需有**自动化测试**扫描种子目录，命中上述任一特征即判不通过、不得发布（§10「随包分发与冷启动数据」第 6 条，历史别名 25）。
 
-**已移除的限制（用户 2026-10-04 判定，不得再作为阻塞项）：** 原先要求「不含患者姓名、研究者联系方式或任何个人信息」。该数据集为公开合规数据，**隐私不作为种子筛选条件**；联系人/研究者等字段可正常保留。
+**已移除的限制（用户 2026-10-04 判定，适用于全部三个随包种子，不得再作为阻塞项）：** 原先要求「不含患者姓名、研究者联系方式或任何个人信息」。这些数据均为登记处的公开发布内容，**隐私不作为种子筛选条件**；联系人/研究者等字段可正常保留。ChiCTR 种子因此保留 936 个研究者邮箱与 417 个手机号，这是**实测后明确知情**的结果，不是遗漏。
 
 ### 7.5 更新路径
 
@@ -542,9 +552,9 @@ node scripts/xyb-sync-trial-data.mjs --apply --force   # 覆盖已存在的分�
 3.（别名 24）两库随包分发：`apps/desktop/package.json` 的 `build.extraResources` 中 `resources/plugins → plugins` 映射**保持**即可携带 `data/` 下的文件。种子只读、永不就地修改、缺失不阻断插件加载。
 4.（别名 24a）**发布前数据集新鲜度门禁**：新增检查脚本在数据集超过阈值（初拟 90 天）或**读不出构建日期**时返回非零退出码并阻断发布，打印可执行的修复命令；阈值可经环境变量覆盖。检查过程**不联网、不写盘**（须有测试断言）。
 5.（别名 24b）**一键更新**：`scripts/xyb-sync-trial-data.mjs` 统一支持 Veeva 与 CDE 两个数据集；未加 `--force` 时**不覆盖**已存在的种子（须有测试）；更新后输出需提交的文件清单与建议发布说明条目（数据集版本 + 日期）。开发者发布新版本时须在发布说明中记录数据集版本与日期。
-6.（别名 25）**CDE 种子内容红线（必须执行，且须有自动化测试）**：种子中**不得**出现 Cookie / 会话凭据、`config.json` 内容或任何认证材料；**不得**含站点原始响应留档（`raw/`、`word/*.source.doc`）。违反即判不通过，不得发布。
+6.（别名 25）**随包种子内容红线（适用于 ChiCTR / CDE / WHO ICTRP 三处，必须执行，且须有自动化测试）**：种子中**不得**出现 Cookie / 会话凭据、`config.json` 内容或任何认证材料；**不得**含站点原始响应留档（ChiCTR 的 `raw_text` 与 `html/`、CDE 的 `raw/` 与 `word/*.source.doc`）。违反即判不通过，不得发布。
 
-    > **修订（2026-10-04）：** 原条含「不得含患者姓名、研究者联系方式或任何个人信息」。用户判定该数据集为公开合规数据，隐私不作为约束，该限制已移除；保留的两项分别依据安全（凭据）与体量/结构化（原始留档）。
+    > **修订（2026-10-04）：** 原条含「不得含患者姓名、研究者联系方式或任何个人信息」，且原本挂在 CDE 名下。用户判定这些数据为公开发布内容，隐私不作为约束，该限制已移除，且适用范围明确为**全部三个随包种子**；保留的两项分别依据安全（凭据）与体量/结构化（原始留档）。范围与实测数据见 §7.4 的适用范围修订。
 7.（别名 26）**自动 bootstrap**：安装后自动对与查询最相关的种子关键词做一次**增量**更新（仅 `incremental: true`，且每 24 小时最多一次）；仅在归档/索引为空或过期时触发；失败即停、不重试；会话未配置时报 `NEEDS_SETUP`，**不得**静默跳过。
 8.（别名 27）**手动更新可用**：用户可在设置中显式触发两库更新（Veeva 刷新工具、CDE `sync_incremental`）；更新不得静默覆盖用户已有且更完整的数据；更新前后可区分种子与用户副本。
 9.（别名 28）启动/加载/查询路径不删除、不覆盖、不 VACUUM、不重建用户运行库与归档；`slim-db.mjs` 只在构建/刷新链路运行。Veeva 刷新工具（`sync_sitemap` / `import_csv_export` / `backfill_details` / `reindexFts`）属本组第 8 条（历史别名 27）「手动更新」范围，**不在**查询扇出范围；查询路径除读本机归档外不产生本地写入。
@@ -707,16 +717,19 @@ ICTRP 与本项目已接入的任何一个来源都不同，其差异**直接决
 
 - 把 `/Users/qinxiaoqiang/Downloads/ictrp-mcp-service/` 的 `src/ictrp_mcp/` 源码树整体复制进
   `apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/`（**只复制 `src/` 下的包，不复制 `tests/`、`fixtures/`、`docs/`、`.venv`**）。
-- 同时随包一份 `pyproject.toml` 与 `ATTRIBUTION.md`（许可与 WHO 条款声明，§15.7）。
 - 启动命令不依赖 `pip install`，直接以模块方式运行：
-  `"command": "python3", "args": ["-m", "ictrp_mcp.server"]`，并用 `cwd` 指向随包目录（或设 `PYTHONPATH`）。
+  `"command": "python3", "args": ["-m", "ictrp_mcp.server"]`，并用 `env.PYTHONPATH` 指向随包目录。
 - **零第三方依赖的硬要求**：`mcp` / `httpx` / `pydantic` 三个依赖**不能**假定用户机器已装。因此 §15.3.5 给出探测与降级路径。
+
+> **勘误（2026-10-04 实现轮）：** 本节原写「同时随包一份 `pyproject.toml` 与 `ATTRIBUTION.md`」。实现时未复制这两个文件，**且不打算复制**：`pyproject.toml` 是构建元数据，以 `-m ictrp_mcp.server` 方式运行不需要它；WHO 条款与归因的载体改为**种子文件自带的 `attribution` / `terms_notice` 字段**（见 15.7），因为那份数据才是条款约束的对象，而源码不是。此前「随包 ATTRIBUTION.md」的设想是把归属放在错误的位置。
 
 **被否方案及理由（记录以备复核）：**
 
 - **方案 P（要求用户 `pip install -e .`）**：违反「开箱即用」，且在打包后的 app 里用户没有终端可操作。否决。
 - **方案 X（发布到 PyPI 后 `npx`-式拉取）**：需要额外的发布流程与版本治理，本期不可行；且 Python 生态没有 `npx` 的等价物，仍需本机 Python。否决。
 - **方案 B（随包一个独立 Python 运行时）**：包体积增加数十至上百 MB，且需为三大平台各打一份。收益不抵成本。否决，但**记为未来若 Python 依赖成为普遍问题的升级路径**。
+
+> **新增备选方案 N（上游 npm 包形态，2026-10-04 实现轮补充，当前未采用）：** 上游在此期间新增了 npm 包 `ictrp-mcp-server`（Node MCP server 包装 Python sidecar，`sidecar/vendor/` 内含同一份 Python 源码，自举时从 tarball 本地构建 wheel、不依赖 PyPI）。它**完全满足形态 B 第二子类型（公开 npm 包）**，且额外提供 `ICTRP_HOME` 可写目录重定向（解决 asar 只读安装）。**但截至本 SPEC 修订时该包尚未发布到 npm registry**（`registry.npmjs.org/ictrp-mcp-server` 返回 `latest: {}`、`versions: []`），依赖它会使「开箱即用」系于一个尚未存在的发布物。故**本期仍用方案 V**；待其发布后可作为 V 的替代实现，切换成本仅限 manifest 的 `command`/`args`/`env` 三项。注意两者**不可同时声明**：同一个 `id` 只能有一个声明，且同时跑两份 Python 核心没有意义。
 
 #### 15.3.3 来源描述符（宿主侧注册表新增条目）
 
@@ -736,10 +749,28 @@ ICTRP 与本项目已接入的任何一个来源都不同，其差异**直接决
   // §15.5 新增字段
   upstreamIncomplete: true,            // 该来源的返回集是下界
   overlapWith: ["chictr", "clinicaltrials_gov"],  // 见 15.5 合并规则 1、2
+  // 第 5 位起为本地工具，**不进扇出**（§6.5 第 4 条）。工具数 9 而非 7，见下方勘误。
   localTools: ["ictrp_filter", "ictrp_field_query", "ictrp_registry_summary",
-               "ictrp_find_duplicates", "ictrp_export", "ictrp_cache_status"],
+               "ictrp_find_duplicates", "ictrp_export", "ictrp_cache_status",
+               "ictrp_snapshot", "ictrp_bundle_status"],
 }
 ```
+
+> **勘误（2026-10-04 实现轮）：工具数是 9 而非 7。** 上游在此基础上新增了两个**纯本地**工具：`ictrp_snapshot`（把已物化的结果集写成 canonical JSON 快照，「for shipping inside a packaged application」）与 `ictrp_bundle_status`（报告哪个本地快照会服务某关键词，不触网）。这些新增**不改变扇出设计**——`ictrp_search` 仍是唯一进扇出的联网工具，其余 8 个都只在用户或助手显式需要时才调用。
+>
+> **二次勘误（同一实现轮，反向）：本节一度写成「10 个工具」，并列入 `ictrp_check_environment`，这是错的。**
+> 三处代码源同时证伪——`apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/ictrp_mcp/server.py`
+> 的 `Tool(name=...)` 只有 9 个：`ictrp_search / ictrp_filter / ictrp_field_query /
+> ictrp_registry_summary / ictrp_find_duplicates / ictrp_export / ictrp_cache_status /
+> ictrp_snapshot / ictrp_bundle_status`；在本仓库 vendored 副本与上游
+> `/Users/qinxiaoqiang/Downloads/ictrp-mcp-service/src/ictrp_mcp/server.py` 上
+> `grep 'name="ictrp_'` 的结果逐字一致；`grep -rn check_environment` 在本仓库 vendored 树上**零命中**。
+> `ictrp_check_environment` 只出现在上游的**部署文档**
+> `/Users/qinxiaoqiang/Downloads/ictrp-mcp-service/docs/deployment/XYB_PI_DESKTOP_INTEGRATION.md:316`
+> （「本项目已注册第 10 个 MCP 工具 `ictrp_check_environment`」），即**文档宣布了一个当时尚未交付的工具**。
+> 教训：SPEC 的工具清单只能从**注册代码**取，不能从文档转抄——文档描述意图，注册代码描述事实。
+> **后果（必须落到实现）：** §15.3.5 的四级探测因此**没有服务级权威入口**，插件仍需自己拼环境判定
+> （Python 是否存在、依赖是否齐全），不得依赖一个不存在的工具并因此静默降级。
 
 **`sideEffect` 新取值的论证：** ICTRP 的 `ictrp_search` 会**写本机缓存**（物化结果集到 `ICTRP_CACHE_DIR`）。它不写用户数据、不抓取站点以外的资源、不需要登录，因此**不是** `local_archive`（后者按 §6.2 第 5 条一律不进静默扇出）。但它是写盘的，不能标 `none`。故新增 `local_cache`：**允许进静默扇出，但必须在审计中记录写盘事实**，且缓存目录必须位于用户数据区、不得随包、不得进 git。
 
@@ -784,19 +815,30 @@ ICTRP 与本项目已接入的任何一个来源都不同，其差异**直接决
 
 #### 15.3.6 manifest 声明
 
-在 `apps/desktop/resources/plugins/xyb.trial-sources/manifest.json` 的 `contributes.mcpServers` 新增：
+在 `apps/desktop/resources/plugins/xyb.trial-sources/manifest.json` 的 `contributes.mcpServers` 新增（**已实现的形态**）：
 
 ```json
-"ictrp": {
+{
+  "id": "who-ictrp",
+  "label": "WHO ICTRP（全球多注册库汇总）",
+  "transport": "stdio",
   "command": "python3",
   "args": ["-m", "ictrp_mcp.server"],
-  "env": { "PYTHONPATH": "./mcp/ictrp" }
+  "env": {
+    "PYTHONPATH": "./mcp/ictrp",
+    "ICTRP_BUNDLE_PATH": "./data/ictrp/pancreatic-cancer.json"
+  }
 }
 ```
 
+> **勘误（2026-10-04 实现轮）：声明形态与本节初稿有三处不同。**
+> 1. 用**数组**结构（与既有 `chictr` / `veeva-ctv` / `chinadrugtrials` 三项一致，含 `id` 与 `label`），不是对象键 `"ictrp"` 映射。既有清单里没有对象映射的先例，保持一致比照搬一段示意代码重要。
+> 2. `id` 定为 **`who-ictrp`**（与 §15.3.3 描述符的 `key: "who_ictrp"` 对应，但清单侧惯用连字符，与 `veeva-ctv` 一致）。
+> 3. **新增 `ICTRP_BUNDLE_PATH`**，指向随包的冷启动快照（见 §15.3.8）。
+
 **不新增权限声明。** `xyb.trial-sources` 已有的 `mcp.server.local` 覆盖本服务；ICTRP 不需要 `net.fetch`（出网由 MCP 进程自己用 `httpx` 完成，不经宿主网络中介）、不需要 `agent.tool.register`、不需要 `fs.*`。
 
-**新增一个 setting**：`ictrpCacheDir`（可选，默认空 → 回落 `ICTRP_CACHE_DIR` 环境变量 → 再回落 `~/.cache/ictrp-mcp-service`）。理由：§7.2 的既有原则是「用户运行库不进包、不进 git」，给用户一个覆盖位置是同一原则的延伸。
+**新增一个 setting**：`ictrpSeedDir`（可选，默认空 → 使用随包快照）。理由：快照是只读构建产物，默认直接用随包位置（用户不需要、也不应该复制一份）；只有用户想换成自建快照（换关键词、或刷新过期的快照）时才需要指向另一个目录。**注意**：这与 §15.3.6 初稿设想的 `ictrpCacheDir` 不是同一件事——`ICTRP_CACHE_DIR`（运行时结果集缓存）留给服务自己的默认值，不暴露为 setting，因为用户没有理由关心它，而误设它会让「本地工具免费」的缓存失效。
 
 #### 15.3.6.1 宿主启动链路的三个既有限制（实现前必读）
 
@@ -827,7 +869,23 @@ ICTRP 服务在语义上属于「试验来源」能力，故 `pluginId` 登记�
 
 **明确不做的事：** 不把 ICTRP 提升为独立插件 `xyb.ictrp`。理由：会新增一个需要用户单独启用的开关，直接违反「开箱即用」。
 
-**vendoring 时的排除项：** 复制 `src/ictrp_mcp/` 时**必须排除** `__pycache__/`（该目录存在于源仓库），并排除 `tests/`、`fixtures/`、`docs/`、`.venv/`。源码树含 `__init__.py`，可直接以 `-m ictrp_mcp.server` 运行。
+**vendoring 时的排除项：** 复制 `src/ictrp_mcp/` 时**必须排除** `__pycache__/`（该目录存在于源码仓库），并排除 `tests/`、`fixtures/`、`docs/`、`.venv/`。源码树含 `__init__.py`，可直接以 `-m ictrp_mcp.server` 运行。已执行的复制：17 个 `.py` 文件、156K。
+
+#### 15.3.8 冷启动快照（2026-10-04 实现轮新增，用户决策）
+
+**这不是初稿设计的，是实现轮发现上游已提供该机制后补上的。** 用户明确要求随包分发，故在此固定下来。
+
+**机制（上游 `offline.py` 提供，本项目只使用）：** 服务在联网检索前先查本地快照，解析顺序为 `ICTRP_BUNDLE_PATH`（显式文件，若是目录则拼 `<slug>.json`）→ `ICTRP_BUNDLE_DIR/<slug>.json`。`snapshot_slug()` 把关键词规范化为 `[a-z0-9-]`（`pancreatic cancer` → `pancreatic-cancer`）。**关键词不匹配则返回 `None` 并回落到网络**——这条很重要，它保证一份固定快照**不会静默回答无关检索**。
+
+**快照绝不静默。** 命中快照时响应的 `provenance` 必带 `offline_snapshot: true`、`snapshot_path`、`snapshot_created_at`、`snapshot_age_days`、`snapshot_stale`。超过 `ICTRP_BUNDLE_MAX_AGE_DAYS`（默认 **28 天**，依据：WHO 每周更新，四周已远超应重建的时点）时 `snapshot_stale: true` 并附警告。**这份种子因此有保质期，发布前必须重跑**（见 §15.10）。
+
+**随包内容：** `xyb.trial-sources/data/ictrp/pancreatic-cancer.json`，关键词 `pancreatic cancer`，实测 **6262 条实得 / 6952 条上游自报**（缺失 9.9%，与既有实测表一致）。原始快照 42.4MB，打包裁剪至 **10.6MB**。
+
+**裁剪规则（与 ChiCTR/CDE 种子不同）：** 只保留编排器实际消费的字段——身份（`trial_id` / `source_register`）、标题、`condition`、干预、状态（含 `recruitment_status_normalized`）、分期、日期、样本量、国家、来源注册库、申办方。剔除入选/排除标准（单项占 12.8MB）、终点指标重复变体、结果数据、伦理联系人、桥接标志。**归因字段一个都不能裁**：`snapshot.attribution`、`snapshot.terms_notice`、`provenance.ictrp_export_date`、`provenance.upstream_reported_total` 全部原样保留，这是 WHO 条款第 4.b 条的许可前提（§15.7）。
+
+**为什么不复制到用户目录：** 与 Veeva/ChiCTR/CDE 三个种子不同，ICTRP 快照**不复制**——它是只读构建产物，用户不会修改它，复制 10.6MB 只是浪费。服务通过 `ICTRP_BUNDLE_PATH` 直接读随包位置。用户若要用自建快照，改 `ictrpSeedDir` setting，以 `ICTRP_BUNDLE_DIR` 生效。
+
+**契约不变性（必须成立，已实测）：** 命中快照时 `matched_rows_returned`（6262）与 `upstream_reported_total`（6952）**仍然分开返回**，`records_incomplete: true` 仍在。快照**不**把下界变成上界，也**不**产生新的成功语义——它是「同一份数据，预先算好」。
 
 ### 15.5 契约扩展
 
@@ -864,12 +922,17 @@ type SourceResultV2 = {
 3. ICTRP 记录**不得**因为「其他来源没有它」而被丢弃——它可能正是其他来源缺失的那条。
 4. 三层数字必须同时可见：本机返回的条数、ICTRP 自报的匹配数、宿主截断前的总候选数。**禁止把任何两个数字合并成一个**。
 
+> **实现轮补充（2026-10-04）：合并优先级必须是显式的「来源权威序」，不能是字典序。**
+> `apps/desktop/resources/plugins/xyb.trials/lib/unified.js` 的 `mergeGroup()` 原按 `a.source.localeCompare(b.source)` 取首条为主记录。就本例而言 `chictr` 与 `clinicaltrials_gov` 恰好都排在 `who_ictrp` 之前，**结果看起来是对的**——但那是巧合：任何新增来源的字母序都可能翻转结论（一个名为 `aaa_*` 的聚合库会赢过 `chictr`）。现已改为显式 `SOURCE_AUTHORITY` 表（一手注册库 0 / 本地索引 10 / 聚合库 20，未登记来源回落至 100 并按字典序），合并记录新增 `primarySource` 字段指明主记录来源。
+> **本 SPEC 的教训（适用于所有未来来源）：** 只要规则的正确性依赖某个未写下的排序假设，就必须把它写成数据，而不是留给巧合。规则 1、2 现在是 `SOURCE_AUTHORITY` 表中的一个数字，而不是对来源名字的幸运排序。
+
 ### 15.6 并发、期限与截断的调整（回答 §6.4 原待确认项）
 
 §4.4 写死并发 3，是面向四来源的。加入第 5 个来源后：
 
 - **并发上限由 3 提升到 4。** 理由：ICTRP 单次调用最长（见下），若并发保持 3，在最坏情况下 ICTRP 会被排到最后一批，把整体耗时拉长接近一倍。提升到 4 使 ICTRP 能与前三个来源同时起跑，而吞吐压力仍受控（4 个来源中只有 1 个会写缓存）。
-- **ICTRP 单独期限 60s**，理由：ICTRP 的 `ictrp_search` 是三跳 postback，且要物化**整个**结果集（`limit=1000` 时可能上千行）后才返回，比 CT.gov 的单次 API 调用慢一个量级。服务侧 `ICTRP_TIMEOUT` 默认 60，**编排器不得超过它**（§4.4 的既有约束）。
+- **ICTRP 单独期限 60s**，理由：ICTRP 的 `ictrp_search` 是三跳 postback，且要物化**整个**结果集（`limit=1000` 时可能上千行）后才返回，比 CT.gov 的单次 API 调用慢一个量级。
+   > **勘误（2026-10-04 实现轮）：不存在 `ICTRP_TIMEOUT`。** 本节原写「服务侧 `ICTRP_TIMEOUT` 默认 60，编排器不得超过它」——实测 `grep timeout apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/` **零命中**，该环境变量在本版 Python 源码中不存在。真实约束是 `ictrp/session.py` 的 `IctrpSession.create(cls, *, timeout: float = 60.0)` 默认值，而 `tools.py` 调 `IctrpSession.create()` **不传 timeout** —— 也就是说 **60s 是硬编码默认，服务层没有暴露超时旋钮**。实测这台机器上 WHO 门户可达（`curl https://trialsearch.who.int/Default.aspx` → 200 / 1.44s），但同一机器上一次关键词检索仍在 60s 处 `httpx.ReadTimeout` 失败（`IctrpError: Search request failed:`），把 timeout 提到 240s 后同一检索 3.8s 完成。**结论：60s 偏紧，命中冷缓存或门户抖动时会把可用服务判成失败。** 缓解手段是不在首次扇出时依赖实时链路，而是靠 §15.3.8 的随包快照兜底（这条现在是硬要求，不是优化）。`timeoutMs: 60000` 保持不变——放宽编排器期限只会让用户等更久，而快照已经解决了首次体验。
 - **整体期限由 50s 提升到 75s**，且**整体期限必须大于单个最长来源期限**，否则 ICTRP 永远被整体期限先杀掉。75 = 60（ICTRP 期限）+ 15s 余量。
 - **不重试**：§4.4 明确「来源不是 CDE」才允许有界重试，但 ICTRP 的失败主要是上游响应类（postback 链中某一跳失败、导出被 302 到 `/NoAccess.aspx`），**不属于** §4.4 允许重试的「2s 内启动类失败」，故 ICTRP **不进入重试例外**。
 - **`refresh=false` 本身就是一种截断控制**：同一关键词复用缓存，避免重复的三跳抓取。
@@ -879,17 +942,21 @@ type SourceResultV2 = {
 
 **这是本来源独有的法务红线，与 §7.4 的种子内容红线并列。**
 
-- 代码为 MIT，可随包分发；**必须**随包保留 `ATTRIBUTION.md` 与原始 `LICENSE`。
+**用户已裁决（2026-10-04）：随包分发，接受 WHO 条款风险。** 该裁决只免除「是否分发」的犹豫，**不**免除下列义务——条款原文明确「These Terms and Conditions apply to all data obtained from the WHO ICTRP, independent of format and method of acquisition.」，随包快照与新检索取得的数据受同一约束。
+
+- 代码为 MIT，可随包分发；vendored 树的 `LICENSE` 随包。
+  > **勘误（2026-10-04 实现轮）：不随包 `ATTRIBUTION.md`。** 本节原写「**必须**随包保留 `ATTRIBUTION.md`」。该设想已废弃：归因的载体是**数据文件本身**（`snapshot.attribution` + `snapshot.terms_notice` + `provenance.ictrp_export_date`），因为条款约束的对象是从 ICTRP 取得的数据，而不是取得它的代码。只放一份独立的 `ATTRIBUTION.md` 反而更容易与实际数据脱钩——种子被单独拷走时归因就丢了。打包脚本对这一点有硬校验：`attribution` 或 `terms_notice` 缺失即中止（`scripts/xyb-sync-trial-json-seeds.mjs` 的 ICTRP 分支）。
 - **数据受 WHO ICTRP 条款约束**，以下六条为强制：
-  1. 必须标注数据来自 **WHO ICTRP**；
-  2. 必须**显著显示 WHO 处理日期**（`last_refreshed_display`）；
-  3. ICTRP **每周更新**，不得暗示实时性；
-  4. **不得主张对数据的专有权**；
-  5. **不得使用 WHO 名称或徽标**（不得暗示 WHO 背书）；
-  6. **禁止营销、推广或商业用途**。
+  1. 必须标注数据来自 **WHO ICTRP**（条款 4.b(1)）；
+  2. 必须**显著显示 WHO 处理日期**（条款 4.b(3)；字段用 `provenance.ictrp_export_date`，实测值 `"10/04/2026 15:26:10"`。注意**不是**本节原写的 `last_refreshed_display`——那是逐条记录的字段，属于 WHO 的刷新时间，不等于 WHO 处理这份数据集的日期）；
+  3. ICTRP **每周更新**，不得暗示实时性（条款 4.b(2) 的「update the data such that they are current at all times」在此体现为**快照保质期 28 天 + staleness 上报**，见 §15.3.8）；
+  4. **不得主张对数据的专有权**（条款 4.c）；
+  5. **不得使用 WHO 名称或徽标**（条款 4.e；不得暗示 WHO 背书）；
+  6. **禁止营销、推广或商业用途**（条款 4.d）。
+- 条款末尾规定「in effect as long as the user retains any of the data」——**卸载本应用不终止条款义务**，用户自行留存的快照仍受约束。这必须在条款披露入口中说明。
 - 必须声明与 WHO **无隶属关系**。
 - 中国试验在 ICTRP 中 `source_register = "ChiCTR"`，呈现时**必须**标注为 **「ChiCTR via WHO ICTRP」**，不得标注为「ChiCTR」——后者会让用户误以为这是第 2 来源的实时 ChiCTR 数据。
-- UI 的 ICTRP 结果区必须包含一个**条款披露入口**（可折叠），内容即上述六条。
+- UI 的 ICTRP 结果区必须包含一个**条款披露入口**（可折叠），内容即上述六条，并附 WHO 官方条款链接 `https://www.who.int/tools/clinical-trials-registry-platform/network/who-data-set/downloading-records-from-the-ictrp-database` 的**逐字摘录**（不要转述，转述会丢失「independent of format and method of acquisition」这类关键措辞）。
 
 ### 15.8 字段陷阱（实现时必须处理）
 
@@ -923,21 +990,38 @@ type SourceResultV2 = {
 
 ### 15.10 预期改动范围（§9 补充）
 
-**新增文件：**
+**新增文件（截至 2026-10-04 实现轮的实际状态）：**
 
-- `apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/`（vendored `ictrp_mcp` 包 + `pyproject.toml` + `ATTRIBUTION.md` + `LICENSE`）
-- `apps/desktop/resources/plugins/xyb.trial-sources/skills/who-ictrp.md`
-- `apps/desktop/test/xyb-trials-ictrp.test.mjs`
-- `scripts/xyb-check-ictrp-vendor.mjs`（校验 vendored 树完整性与版本一致性）
+- `apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/`（vendored `ictrp_mcp` 包，17 个 `.py`，156K）— **已建**
+  > 勘误：不随包 `pyproject.toml` / `ATTRIBUTION.md`，理由见 §15.3.2 与 §15.7。
+- `apps/desktop/resources/plugins/xyb.trial-sources/data/ictrp/pancreatic-cancer.json`（冷启动快照，6262 条，10.6MB）— **已建**
+- `apps/desktop/resources/plugins/xyb.trial-sources/data/chictr/`（468 条，3.9MB）— **已建**，用户 m00796 要求
+- `apps/desktop/resources/plugins/xyb.trial-sources/data/chinadrugtrials/`（139 条，7.6MB）— **已建**，用户 m00796 要求
+- `scripts/xyb-sync-trial-json-seeds.mjs` — **已建**，三个种子的生成与校验入口
+- `apps/desktop/resources/plugins/xyb.trial-sources/skills/who-ictrp.md` — **已建**（SPEC §15.3.7 要求的六项内容全部落地：ToolSearch 先激活、三条禁令原样搬运、`set_id` 必须来自一次 `ictrp_search` 且禁止用户手打、不得否定他源阳性发现、WHO 条款披露含 `provenance.ictrp_export_date`、ChiCTR 记录必须标注「ChiCTR via WHO ICTRP」）。写入时按实测把工具数从部署文档宣称的 10 纠正为**实际注册的 9**，`ictrp_check_environment` 不存在（详见 §15.3.3 二次勘误）。已在 `manifest.json` 的 `contributes.skills` 注册，`README.md` 同步。
+- `apps/desktop/test/xyb-trials-ictrp.test.mjs` — **已建**，13 条 ICTRP 专属契约测试（下界契约、聚合库不否定直连来源、重叠合并优先级、写盘失败仍返回、本地工具不进扇出、未知状态降级、`NEEDS_SETUP` 不混作无结果）
+- `apps/desktop/test/xyb-trials-unified.test.mjs`（既有文件，**本轮从 4 来源修正为 5 来源**）— **已改**：`statuses.length` 4→5、`sourcesUnavailable` 3→4、覆盖率断言 4→5、`missingSources` 补 `who_ictrp`。**该文件此前 8 条测试全部失败**，因为 `unified.js` 已加第 5 来源而测试仍按四来源断言；这正是「冻结清单」文件未被同步更新的后果（见 §9 冻结清单——它冻结的是「不要为迁就实现而改测试」，不是「加了来源也不要改」）。
+- `scripts/xyb-check-ictrp-vendor.mjs` — **已建**：校验 vendored 树的必需模块齐全、无 `__pycache__/`、`*.pyc` 全部可读，并可与上游逐字节比对（`--upstream <repo>` 或 `ICTRP_UPSTREAM`）。已接入 `package.json` 的 `check:ictrp-vendor`。
+  **校验的严格性是有意的：** 与上游的漂移用 `fail`（退出码 1）而非 `warn`。差异只有两种可能——(a) 有人就地改了随包副本（重跑 vendoring 就会丢），(b) 上游变了而本仓库没跟上。两者都需要人来裁决，用警告会被滑过去。**注意**：本地默认不指定上游，因此 CI 若不设 `ICTRP_UPSTREAM` 只做第 1–3 项；要在这台开发机上跑完整比对用 `--upstream /Users/qinxiaoqiang/Downloads/ictrp-mcp-service`。
+  **已知坑（本脚本自身的教训）：** 初版把「文件为空」一律判为损坏，误报了 3 个 `__init__.py`——它们在 Python 里**惯例就是空文件**。已改为对 `__init__.py` 豁免空检查，其余文件仍严格。
 
-**修改文件：**
+**修改文件（实际）：**
 
-- `apps/desktop/resources/plugins/xyb.trial-sources/manifest.json`（新增 `mcpServers.ictrp`、`ictrpCacheDir` setting）
-- `apps/desktop/resources/plugins/xyb.trial-sources/main.js`（四级探测逻辑，15.3.5）
-- 宿主侧 `TrialSourceDescriptor` 注册表（新增 `who_ictrp` 条目与三个新字段取值）
-- 宿主侧状态机与聚合器（`UPSTREAM_RESULT_INCOMPLETE`、`overlapWith`、15.5 合并规则）
-- UI 渲染（ICTRP 结果区、双数字呈现、条款披露、「via WHO ICTRP」标注）
-- `docs/guide/临床新能力接入规范指导.md`（补充 Python 服务的 vendoring 形态，这是现有指南未覆盖的第四种实现路径）
+- `apps/desktop/resources/plugins/xyb.trial-sources/manifest.json` — **已改**：新增 `mcpServers` 内的 `who-ictrp`（数组第 4 项）与 `ictrpSeedDir` setting（**不是**原设想的 `ictrpCacheDir`，见 §15.3.6）
+- `apps/desktop/resources/plugins/xyb.trial-sources/main.js` — **已改**：`SEED_ICTRP` / `ICTRP_SEED_KEYWORD` / `readIctrpSeedMeta()` / `ictrpSeedStatus()` / `defaultIctrpDir()`，并在 `onLoad` 与 `panelPayload()` 接线
+- `apps/desktop/resources/plugins/xyb.trials/manifest.json` — **已改**：`version` 0.2.1→0.3.0，description「四个来源」→「五个来源」，`xyb_trials_unify` 的 description 与 schema 加入 `who_ictrp` 键、两个下界字段（`upstreamReportedTotal` / `matchedRowsReturned`）与 `coverage.sentence` / `completeness.sentence` 的原样呈现要求。**这条不是文案润色**： manifest 的工具描述是模型实际读到的契约，漏掉 `who_ictrp` 键等于告诉模型这一处不存在。
+- `apps/desktop/resources/plugins/xyb.trials/main.js` — **已改**：`xyb_trials_unify` 的 `registerTool` 描述与 schema 同步为五来源（与 manifest 两处一致），注释「四来源统一查询」→「五来源统一查询」，并补 WHO ICTRP 的下界契约说明。
+- `apps/desktop/resources/plugins/xyb.trials/views/trials.html` — **已改**：面板按钮 title「四个来源」→「五个来源」。
+- `apps/desktop/resources/plugins/xyb.trials/lib/unified.js` — **已改**（仅注释）：`coverageSentence` 的用例注释不再写死「四渠道」。
+- `apps/desktop/resources/plugins/xyb.trial-sources/skills/china-trials.md` — **已改**：来源总览表「四处来源」→「五处来源」并新增 WHO ICTRP 行，frontmatter description 补一句聚合库说明，正文加一段解释它为何不能顶替一手来源。
+- `apps/desktop/resources/plugins/xyb.trial-sources/README.md` — **已改**：MCP 服务列表补 `who-ictrp`、技能列表补 `skills/who-ictrp.md`、章节标题「三个来源」→「四处来源」，并新增 WHO ICTRP 小节（形态、前置、9 工具只 1 个联网、只认英文、下界双数字、28 天快照、WHO 条款、禁止商业用途）。
+- `package.json` — **已改**：新增 `check:ictrp-vendor` 脚本。
+- 宿主侧 `TrialSourceDescriptor` 注册表（新增 `who_ictrp` 条目与三个新字段取值）— **未改**
+- 宿主侧状态机与聚合器（`UPSTREAM_RESULT_INCOMPLETE`、`overlapWith`、15.5 合并规则）— **未改**
+- UI 渲染（ICTRP 结果区、双数字呈现、条款披露、「via WHO ICTRP」标注）— **未改**
+- `docs/guide/临床新能力接入规范指导.md`（补充 Python 服务的 vendoring 形态）— **未改**
+
+**§15.9 验收标准中，条目 1（来源进扇出）、2–3（探测降级）、4（双数字）、10（启动链路三限制）依赖宿主侧改动，均在未完成之列。**
 
 **不得修改（§9 冻结清单）：**
 
@@ -955,7 +1039,17 @@ type SourceResultV2 = {
 ### 15.12 待确认（并入 §13）
 
 - **Python 依赖是本节最大的「开箱即用」风险。** 若目标用户机器普遍没有 `mcp`/`httpx`/`pydantic`，则 15.3.5 第 3 步会经常失败，用户在第一次使用时才会看到安装提示——这**不算**开箱即用。需在实现前明确：是接受此折中，还是走方案 B（随包独立 Python 运行时）。
+  > **实现轮补充实测：** 开发机（macOS，Python 3.10.11）**三个依赖全部已有**（`httpx 0.28.1` / `pydantic 2.10.6`），`python3 --version` 可用。这只证明了一个数据点，不构成「目标用户机器普遍如此」的结论。**但风险等级下降**：这三个包是 Python 数据栈的常见依赖（`mcp` 稍冷门，但它是本服务唯一的非通用依赖）。
 - vendored 源码的**版本同步机制**：`ictrp-mcp-service` 上游更新后，如何发现并同步？（建议 `scripts/xyb-check-ictrp-vendor.mjs` 记录上游版本号并做校验，但需要定一个上游版本的权威来源。）
-- ICTRP 的 `ICTRP_TIMEOUT` 与服务侧默认 60s 是否在目标网络环境下足够（首次冷缓存下 `limit=100` 的实测耗时需补测）。
+  > **实现轮补充：** 已用 `diff -rq` 验证三方一致——上游 `src/ictrp_mcp/`、上游 npm 包的 `sidecar/vendor/ictrp_mcp`、本仓库 vendored 的 `mcp/ictrp/ictrp_mcp` **逐文件相同**（仅 `__pycache__` 有差异）。故校验脚本的比较基准可以取三者中任一，**建议以 npm 包内 `sidecar/vendor/` 为准**（它有版本号与之同行，而裸源码树没有）。
+- ICTRP 的 60s 超时与服务侧默认是否在目标网络环境下足够（首次冷缓存下 `limit=100` 的实测耗时需补测）。
+  > **已由 §15.6 勘误回应：** `ICTRP_TIMEOUT` 不存在，60s 是 `IctrpSession.create()` 的硬编码默认；实测同机同 URL 先超时后 3.8s 成功，说明 60s 偏紧。**随包快照（§15.3.8）是这条风险的正式缓解手段**，不再是待确认项。冷缓存耗时仍待补测。
 - **已定：`overlapWith` 同时含 `chictr` 与 `clinicaltrials_gov`。** 15.5 合并规则 1、2 已分别规定这两种重叠的保留方向，描述符据此填写，不再待确认。剩余待定的是「重叠合并是否需要单独的 UI 可见性提示」，不阻塞实现。
-- **用户手工配置的 MCP 与内置 ICTRP 并存时的重复计数风险（未裁决）。** 见 §6.2 第 3 条：描述符注册表由宿主持有，用户手工添加的服务器（`mcp_<serverId>_<toolName>`）**不进**扇出、不进状态表、不参与去重。但若用户同时手工配置了一个 ictrp 服务器，模型可绕过编排器直接调用它，与内置 ICTRP 的结果**没有去重通道**，会把 15.9 第 5 条承诺的「条数是下界」变成上界。**建议**：新增一条宿主规则——用户手工 MCP 不得静默并入试验扇出，且其 serverId/工具名与内置来源 key 重叠时 UI 显式提示。**此项需用户裁决后决定是否写入本 SPEC。**
+- **用户手工配置的 MCP 与内置来源并存时的重复计数风险 —— 已裁决（2026-10-04），规则如下，不再是待确认项。**
+  **用户原话：** 「写进 spec：不进扇出，检测到重叠就提示」。
+  **规则（三条，均为强制）：**
+  1. **用户手工配置的 MCP 服务器一律不进试验扇出。** 依据是既有的 §6.2 第 3 条：描述符注册表由宿主持有，`mcp_<serverId>_<toolName>` 来源不进扇出、不进状态表、不参与去重。**这条不因为某个手工服务器看起来「像一个试验来源」而放宽**——宿主无法知道它的参数形状、返回契约或条数语义，把它并入扇出就等于让编排器对一个未知契约做终态化，而内置通道的强制契约（§5.2「失败永不返回 0 条」）对它不成立。
+  2. **必须检测重叠并提示。** 检测依据是手工 MCP 的 `serverId`/工具名与内置来源 `key` 的**规范化比对**（大小写、`-`/`_` 归一）。命中时 UI 显式提示，措辞须点明后果：**「你手工配置的 X 与内置的 Y 指向同一数据源，两条通道的结果未去重，合并计数会偏高。」**
+  3. **提示不得静默。** 不得只在设置页角落显示；用户在该来源产生结果时必须能看到。
+  **理由（保留以备复核）：** 重复计数的后果不是「多显示几条」，而是把 §15.9 第 5 条承诺的**「条数是下界」变成上界**——用户据此判断「只有 3 个试验」时可能是错的。内置通道的设计前提是「编排器知道每个来源的契约」，手工通道没有这个前提，因此二者必须在数字层面就分开，而不是靠用户自己记住。
+  **不在本节范围内：** 是否给手工 MCP 也做「来源」抽象（即让用户手工通道获得与内置同等的契约保证）。那是一个独立的产品决策，需要先定义「用户手工声明的来源描述符」规范，本 SPEC 不做。

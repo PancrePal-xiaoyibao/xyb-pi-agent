@@ -12,7 +12,8 @@ node scripts/xyb-check-plugin-contract.mjs            # 离线
 node scripts/xyb-check-plugin-contract.mjs --online   # 联网，真打数据源
 
 # 2. 直连 MCP 服务，看握手与工具返回
-node scripts/xyb-probe-mcp.mjs chictr npx -y chictr-mcp-server@2.0.2 -- \
+#    ChiCTR 3.0.1 起走 Python sidecar 通道，需先 npx 拉包并确认 CHICTR_USE_SIDECAR=1
+node scripts/xyb-probe-mcp.mjs chictr npx -y chictr-mcp-server@3.0.2 -- \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_trials","arguments":{"keyword":"胰腺癌","max_results":5}}}'
 
 # 3. 用「真实网络 + 真实磁盘」跑插件工具与命令（不是假 fetch）

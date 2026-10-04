@@ -24,7 +24,7 @@
 | 渠道键 | 来源 | 形态 | 前置条件 |
 |---|---|---|---|
 | `clinicaltrials_gov` | ClinicalTrials.gov | 插件直连官方 API v2（`net.fetch`） | 无，开箱可用 |
-| `chictr` | ChiCTR 中国临床试验注册中心 | MCP 服务 `chictr-mcp-server@2.0.2` | 首次需 npm 拉取 + Playwright Chromium |
+| `chictr` | ChiCTR 中国临床试验注册中心 | MCP 服务 `chictr-mcp-server@3.0.2`（`CHICTR_USE_SIDECAR=1`） | 首次需 npm 拉取 + 本机 Python 3.10+ 与约 1GB 运行时；调用前先 `check_environment` 体检 |
 | `veeva_ctv` | Veeva CTV 全球研究库 | MCP 服务 `npx -y ctv-mcp-server@0.1.0` | **开箱可用**：随包分发的种子索引（1352 条）在首次启动时复制到 `~/.ctv-mcp/ctv.db`（见第八节）。仍须注意**全文检索可能漏收 graphql 入库记录**，0 命中时按「本地索引未命中」如实说明，可用 `get_study_detail` 直查绕过 |
 | `chinadrugtrials` | 药物临床试验登记与信息公示平台 | 本机采集器 MCP（`./mcp/chinadrugtrials-mcp.mjs`） | 读取本机归档**无副作用**；联网取数需 Python 依赖 + 患者本人浏览器会话 |
 
@@ -212,7 +212,7 @@ cargo test -p host-core --locked             # → 671 passed / 0 failed（exit 
 
    | 渠道 | 实测结果 | 性质 |
    |---|---|---|
-   | `chictr` | `npx -y chictr-mcp-server@2.0.2` 启动成功；`胰腺癌` → 5 条、`KRAS` → 10 条、`B7-H3` → 1 条、`pancreatic` → 10 条、`YL201` → 0 条；`get_access_state` = `NORMAL` | **可用**，支持中英文；`YL201`=0 属 `NO_RESULTS` |
+   | `chictr` | `npx -y chictr-mcp-server@2.0.2` 启动成功；`胰腺癌` → 5 条、`KRAS` → 10 条、`B7-H3` → 1 条、`pancreatic` → 10 条、`YL201` → 0 条；`get_access_state` = `NORMAL` | **当时可用**，支持中英文；`YL201`=0 属 `NO_RESULTS`。⚠️ **此为 2026-10-03 的历史记录**：该版本用 Playwright 路径且需人工过盾；现插件已固定 `@3.0.1`（sidecar 形态），前置条件与表内描述**不同**，见第一节渠道表 |
    | `veeva_ctv` | `npx -y ctv-mcp-server@0.1.0`（**已发布到 npm**，MIT）启动成功，暴露 12 个工具；`get_index_stats` → 本地索引 210 条、46 列含 `start_date`。**但 `search_studies {keyword:"YL201"}` 返回 0 命中**，而库中实际有 8 条 | **服务器可用，但全文检索有缺口**，详见第 9 条 |
    | `chinadrugtrials` | MCP 启动成功；`get_collector_status` → `python available=true (venv 3.13.12)`、`collector_deps.ok=true`、`cookie.configured=false`、`ready=false` | **环境就绪**，仅待用户本人配置会话（属正常设计，不得自动化） |
 3. Veeva CTV 旧版本地索引可能报 `no such column: start_date`，按 `INDEX_EMPTY` / `FAILED` 如实呈现。

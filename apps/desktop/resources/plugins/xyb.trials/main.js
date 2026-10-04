@@ -261,13 +261,13 @@ async function onLoad() {
     execute: async (args) => searchTrials(args),
   });
 
-  // —— F2：四来源统一查询 ——
-  // 助手按「四来源统一检索」技能逐源取数后，把各来源原始结果交给本工具做
+  // —— F2：五来源统一查询 ——
+  // 助手按「五来源统一检索」技能逐源取数后，把各来源原始结果交给本工具做
   // 规范化、保守合并与去重。合并逻辑是纯函数（lib/unified.js），可离线验证。
   await pi.agent.registerTool({
     name: "xyb_trials_unify",
     description:
-      "把多个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记平台）的原始结果合并成统一清单。" +
+      "把多个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记平台 / WHO ICTRP）的原始结果合并成统一清单。" +
       "只按规范化登记号做保守去重，标题或药物相似不会被合并；" +
       "未执行或失败的来源会保留自己的状态，不会被当作「没有结果」。" +
       "调用前请先分别调用各来源工具取数——每个来源都要真的调用一次它的渠道工具，" +
@@ -275,8 +275,11 @@ async function onLoad() {
       "这两家请用各自的 search_trials，取详情用 get_trial_detail）。" +
       "本工具只做合并，不取数。" +
       "**返回值里的 coverage.sentence 必须原样呈现给用户**：它写明本次只覆盖了几处来源、" +
-      "哪几处没查。只要 coverage.complete 为 false，就不得把结果说成「四渠道汇总」或" +
+      "哪几处没查。只要 coverage.complete 为 false，就不得把结果说成「五渠道汇总」或" +
       "「各渠道数量」，必须如实说明哪几处没查，并说清未覆盖不等于没有结果。" +
+      "**WHO ICTRP（who_ictrp）是聚合库**：它的毛条数是下界，成功时也必须分开报" +
+      "（实得行数 vs 上游自报总数），不得把两个数合成一个「共 N 条」；同一条中国试验" +
+      "会与 ChiCTR 重复，合并后保留 ChiCTR 直连版。completeness.sentence 也要原样呈现。" +
       "仅整理公开信息，不构成医疗建议。",
     risk: "low",
     schema: {
@@ -287,11 +290,14 @@ async function onLoad() {
         sourceResults: {
           type: "object",
           description:
-            "逐来源结果。键为 clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials。" +
-            "值为 { state, records?, explanation?, fetchedAt? }；" +
+            "逐来源结果。键为 clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials / who_ictrp。" +
+            "值为 { state, records?, explanation?, fetchedAt?, upstreamReportedTotal?, matchedRowsReturned? }；" +
             "state 取 SUCCESS / NO_RESULTS / NOT_ENABLED / NEEDS_SETUP / INDEX_EMPTY / " +
             "SESSION_EXPIRED / CHALLENGE_REQUIRED / TIMEOUT / FAILED。" +
-            "某个来源没跑就不要填它，或明确填 NOT_ENABLED——不要用空数组假装「没有结果」。",
+            "某个来源没跑就不要填它，或明确填 NOT_ENABLED——不要用空数组假装「没有结果」。" +
+            "who_ictrp 是聚合库：成功时请把 matchedRowsReturned（实得行数）与 " +
+            "upstreamReportedTotal（上游自报总数）**两个都填上**，不要只给一个；" +
+            "缺失时不填，本工具不会替你编造 0。",
         },
       },
       required: ["sourceResults"],

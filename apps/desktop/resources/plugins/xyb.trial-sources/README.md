@@ -15,9 +15,9 @@
 
 | 类型 | 内容 |
 |---|---|
-| MCP 服务 | `chictr`、`veeva-ctv`、`chinadrugtrials` |
+| MCP 服务 | `chictr`、`veeva-ctv`、`chinadrugtrials`、`who-ictrp`（WHO ICTRP，聚合库） |
 | 采集器 | `collectors/chinadrugtrials/`（Python，供上面的 MCP 服务调用） |
-| 技能 | `skills/china-trials.md`（中国试验来源接入）、`skills/china-drug-trials.md`（登记平台操作细则） |
+| 技能 | `skills/china-trials.md`（来源总览与接入）、`skills/china-drug-trials.md`（登记平台操作细则）、`skills/who-ictrp.md`（WHO ICTRP 聚合库） |
 | 视图 | 「试验来源」面板：逐源写清覆盖范围、能查什么、需要什么、注意什么 |
 | 命令 | 小胰宝：看看有哪些试验来源 |
 
@@ -25,20 +25,45 @@
 **不申请** `fs.*` 与 `net.fetch`——本插件不读写患者文件、不自己发网络请求，
 联网检索与抓取都由 MCP 服务在各自进程内完成。
 
-## 三个来源的前置条件
+## 四处来源的前置条件
 
 ### chictr（ChiCTR 中国临床试验注册中心）
 
-声明为 `npx -y chictr-mcp-server@2.0.2`。首次使用需联网拉取 npm 包，
-并依赖 Playwright Chromium（约 570MB，缓存在 `~/Library/Caches/ms-playwright`）。
+声明为 `npx -y chictr-mcp-server@3.0.2`，并注入 `CHICTR_USE_SIDECAR=1`。
+
+**3.0.0 起改为 Python sidecar 形态**（本机 127.0.0.1:8848）。首次使用需联网拉取 npm 包，
+搜索走 sidecar 纯 HTTP 通道（实测约 1.5s/页），比旧 Playwright 路径快得多，
+也修掉了旧路径每页 5–10s 的人为延时。代价是前置条件变成 **Python 运行时 + 约 1GB**：
+
+- 需本机 Python **3.10+**（本项目无法代为安装）
+- Python 依赖装进自举的 venv，实测约 **321MB**（`playwright` 134M + `patchright` 134M 等）
+- 浏览器内核实测约 **557MB**（`~/Library/Caches/ms-playwright`）
+
+**首次配置必须由用户本人在终端执行一次**（插件没有 shell 能力，代不了）：
+
+```bash
+npx -y -p chictr-mcp-server@3.0.2 chictr-setup setup --browser
+```
+
+注意**不能**照着包自身 `postinstall` 的提示写 `npx chictr-mcp-server setup`——那个 bin 指向
+`dist/index.js`（MCP 服务器本身），它不认 `setup` 子命令，会**静默退出 0 且什么都不做**。
+真正可用的入口是第二个 bin `chictr-setup`。实测 `setup` 约 **6 分钟**。
+
+服务自带环境体检：**调用 chictr 工具前先调 `check_environment`**，
+它只读、不下载，会返回 `ready` / `summary` / `actions[]` 以及各项检查详情。
+
+**sidecar 自动过盾**：站点的阿里盾挑战由 sidecar 用 `curl_cffi`（TLS 指纹伪装）+
+`patchright`（Chromium 反检测补丁）自动解开（实测约 6.7s，无需人工）。
+旧文档写的「触发时需人工验证」是实况**仍然**成立但**仅在回退路径与异常情况下**需要；
+正常路径下挑战对用户不可见。
 
 **为什么固定版本而不用 `@latest` 或全局命令**：实测本机全局装的旧版
-`search_trials` 参数是 `keyword`（必填）+ `months`，而 2.0.2 是
+`search_trials` 参数是 `keyword`（必填）+ `months`，而 3.0.0 是
 `registration_number` / `year`（全部可选）——参数签名不一致。固定版本才能保证技能文档写的参数是对的。
 
-站点有反爬与滑动验证。触发时工具提供人工验证流程
-（`get_access_state` → `prepare_verification_session` → 人工完成 → `resume_after_verification`）。
-这是**让本人完成站点要求的验证**，不是绕过验证。
+站点有反爬与滑动验证。工具仍保留人工验证流程
+（`get_access_state` → `prepare_verification_session` → 人工完成 → `resume_after_verification`），
+供 sidecar 不可用时的异常路径使用。这是**让本人完成站点要求的验证**，不是绕过验证。
 
 ### veeva-ctv（Veeva CTV）
 
@@ -101,6 +126,26 @@
 ## 一处没接进插件的来源
 
 - **CDE 药物临床试验登记平台**：公开检索能力有限，不入客户端，以官方公示为准。
+
+### who-ictrp（WHO ICTRP，第五处）
+
+**它不是一手登记处，是聚合库**：把各国注册库的记录汇总后重发，用来补覆盖面，
+不能顶替上面三处，也不提供更细的字段。
+
+- 形态：**vendored Python 源码**（`mcp/ictrp/`，17 个 `.py`，156K），由宿主以
+  `-m ictrp_mcp.server` 启动，不是 `npx` 拉包。
+- 前置：本机 Python 3.10+ 与依赖；环境不齐时报 `NEEDS_SETUP`。
+- **9 个工具只有 1 个联网**（`ictrp_search`），其余 8 个跑本地已物化的结果集、**不重复联网**。
+  所以扇出只调一次 `ictrp_search`，精炼用 `ictrp_filter`。
+- **只认英文关键词**（中文实测 0 命中）。
+- **条数是下界**：成功时也要把「实得行数」与「上游自报总数」**两个数分开报**，
+  不得合成一个「共 N 条」。`pancreatic cancer` 实测 6262 / 6952。
+- 随包冷启动快照 6262 条（10.6MB），**28 天**后报 `STALE`，届时回落联网。
+- 数据来自 WHO ICTRP，受 WHO 条款约束，**禁止营销与商业用途**，且须标注归因与 WHO 处理日期。
+  呈现 ChiCTR 记录时必须写「ChiCTR via WHO ICTRP」而非「ChiCTR」。
+
+细节见 `skills/who-ictrp.md`；vendored 源码的完整性与上游一致性由
+`node scripts/xyb-check-ictrp-vendor.mjs --upstream <repo>` 校验。
 
 ## 校验
 

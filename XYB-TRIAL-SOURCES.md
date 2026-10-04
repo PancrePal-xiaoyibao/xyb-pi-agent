@@ -17,7 +17,7 @@
 
 | 项目 | 形态 | 出网 | 凭据 | 许可证 |
 |---|---|---|---|---|
-| `chictr_trials` | npm MCP 服务 `chictr-mcp-server@2.0.2` | 仅 `www.chictr.org.cn` | 无 | **Apache-2.0**（README 徽章误标 MIT） |
+| `chictr_trials` | npm MCP 服务 `chictr-mcp-server@3.0.2`（`CHICTR_USE_SIDECAR=1`） | 仅 `www.chictr.org.cn` | 无（sidecar 自解挑战，不需人工） | **Apache-2.0**（README 徽章误标 MIT） |
 | `ctv-mcp-server` | 本地 MCP 服务，未发布 npm | `ctv.veeva.com`（GraphQL 公开，无鉴权） | 无 | MIT |
 | `chinadrugtrials` | 本插件自带采集器 + MCP 服务 | `chinadrugtrials.org.cn` | **需患者本人浏览器会话** | 源仓库无 LICENSE 文件（见第七节） |
 | `ictrp`（**规划中**） | 随包 vendoring 的 Python MCP 服务（`mcp/ictrp/`） | `trialsearch.who.int` | 无 | 代码 **MIT**；**数据受 WHO 条款约束**（不得商业/推广用途，须标注 WHO 与处理日期） |
@@ -61,14 +61,19 @@
 
 对两个 MCP 服务做了 JSON-RPC `initialize` + `tools/list` 握手，不是读文档。
 
-### chictr（`npx -y chictr-mcp-server@2.0.2`）✓
+### chictr（`npx -y chictr-mcp-server@3.0.2`，`CHICTR_USE_SIDECAR=1`）✓
 
 ```
-serverInfo: { name: "chictr-mcp-server", version: "2.0.2" }
-9 个工具：search_trials / get_trial_detail / get_cache_stats / clear_cache /
+serverInfo: { name: "chictr-mcp-server", version: "2.0.2" }   ← 包的 src/index.ts:170 未更新版本号（3.0.1 实测仍未修）
+10 个工具：search_trials / get_trial_detail / get_cache_stats / clear_cache /
         get_cache_stats_v2 / get_runtime_metrics / get_access_state /
-        prepare_verification_session / resume_after_verification
+        check_environment / prepare_verification_session / resume_after_verification
 ```
+
+**前置条件（3.0.0 sidecar 形态）**：需本机 Python 3.10+ 与约 1GB 运行时
+（自举 venv 约 325MB + Python 侧浏览器内核约 557MB）。调用检索前先调只读体检工具
+`check_environment`（30s 缓存，`{"refresh":true}` 强探）。未满足时记 `NEEDS_SETUP`，
+**不得记 `NO_RESULTS`**。
 
 `search_trials` 的四个参数 `keyword` / `registration_number` / `year` / `max_results`
 **全部可选**（可以只按年份或只按注册号查）。

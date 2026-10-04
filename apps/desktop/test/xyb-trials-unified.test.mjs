@@ -196,15 +196,15 @@ test("未提供结果的来源标记为未执行，绝不显示成「没有结�
     },
   });
 
-  assert.equal(result.statuses.length, 4, "四个来源都必须有状态");
+  assert.equal(result.statuses.length, 5, "五个来源都必须有状态");
   const bySource = Object.fromEntries(result.statuses.map((s) => [s.source, s]));
   assert.equal(bySource.clinicaltrials_gov.state, "SUCCESS");
-  for (const source of ["chictr", "veeva_ctv", "chinadrugtrials"]) {
+  for (const source of ["chictr", "veeva_ctv", "chinadrugtrials", "who_ictrp"]) {
     assert.equal(bySource[source].state, "NOT_ENABLED");
     assert.notEqual(bySource[source].state, "NO_RESULTS");
   }
   assert.equal(result.sourcesQueried, 1);
-  assert.equal(result.sourcesUnavailable, 3);
+  assert.equal(result.sourcesUnavailable, 4);
   assert.ok(result.disclaimer.includes("不构成医疗建议"));
 });
 
@@ -218,11 +218,12 @@ test("单源失败不影响其余来源结果", () => {
       chictr: { state: "TIMEOUT", explanation: "查询超时" },
       veeva_ctv: { state: "INDEX_EMPTY" },
       chinadrugtrials: { state: "SESSION_EXPIRED" },
+      who_ictrp: { state: "FAILED", explanation: "上游导出不完整" },
     },
   });
 
   assert.equal(result.records.length, 1, "可用来源的结果必须照常返回");
-  assert.equal(result.sourcesUnavailable, 3);
+  assert.equal(result.sourcesUnavailable, 4);
   const bySource = Object.fromEntries(result.statuses.map((s) => [s.source, s]));
   assert.equal(bySource.chictr.state, "TIMEOUT");
   assert.equal(bySource.veeva_ctv.state, "INDEX_EMPTY");
@@ -295,16 +296,16 @@ test("状态语义：未跑 ≠ 没结果，未知状态降级为 FAILED", () =>
   const chictr = noRes.statuses.find((s) => s.source === "chictr");
   assert.equal(chictr.state, "NO_RESULTS");
   assert.equal(noRes.sourcesQueried, 1, "NO_RESULTS 属于「已执行」");
-  assert.equal(noRes.sourcesUnavailable, 3);
+  assert.equal(noRes.sourcesUnavailable, 4);
 
   // 完全没提供该来源 → NOT_ENABLED，且不得被当成「查过无结果」
   const untouched = u.buildResult({ query: { keywords: "YL201" }, sourceResults: {} });
-  assert.equal(untouched.statuses.length, 4, "四渠道状态恒为四条，不得省略");
+  assert.equal(untouched.statuses.length, 5, "五渠道状态恒为五条，不得省略");
   for (const s of untouched.statuses) {
     assert.equal(s.state, "NOT_ENABLED", `${s.source} 未提供结果时应为 NOT_ENABLED`);
   }
   assert.equal(untouched.sourcesQueried, 0);
-  assert.equal(untouched.sourcesUnavailable, 4);
+  assert.equal(untouched.sourcesUnavailable, 5);
   assert.equal(untouched.records.length, 0);
 
   // 未知状态不得被乐观当成 SUCCESS
@@ -375,11 +376,12 @@ test("单源 NO_RESULTS 不影响其余来源返回结果", () => {
       veeva_ctv: { state: "NO_RESULTS", records: [], explanation: "本地索引中未命中" },
       chictr: { state: "NO_RESULTS", records: [], explanation: "已试『胰腺癌』『pancreatic』均无匹配" },
       chinadrugtrials: { state: "SESSION_EXPIRED", explanation: "会话已失效" },
+      who_ictrp: { state: "NO_RESULTS", records: [], explanation: "WHO ICTRP 未命中" },
     },
   });
   assert.equal(r.totalRecords, 1, "只有渠道 1 有记录");
   assert.equal(r.records.length, 1);
-  assert.equal(r.sourcesQueried, 3, "SUCCESS + 两个 NO_RESULTS 都算已执行");
+  assert.equal(r.sourcesQueried, 4, "SUCCESS + 三个 NO_RESULTS 都算已执行");
   assert.equal(r.sourcesUnavailable, 1, "仅 SESSION_EXPIRED 属未取得结果");
   assert.doesNotMatch(
     JSON.stringify(r),
@@ -392,10 +394,10 @@ test("单源 NO_RESULTS 不影响其余来源返回结果", () => {
 //
 // 存在理由（2026-10-04 实测）：助手加载了技能、也走了渠道工具，但只查了
 // CT.gov 与 ChiCTR 就结束回合，Veeva 与中国药物登记平台一次都没调，且不报错。
-// 用户会拿到一个"看起来是四渠道汇总、实际只有两个渠道"的答案。
+// 用户会拿到一个"看起来是五渠道汇总、实际只有两个渠道"的答案。
 // 覆盖率契约强制把"漏查"说出来，使不完整的答案看起来就不完整。
 
-test("覆盖率：只查了两个来源时必须点名未覆盖的两个，并说明未覆盖≠没有结果", () => {
+test("覆盖率：只查了两个来源时必须点名未覆盖的三个，并说明未覆盖≠没有结果", () => {
   const r = unified.buildResult({
     query: { condition: "pancreatic cancer", terms: "IBI343" },
     sourceResults: {
@@ -404,29 +406,31 @@ test("覆盖率：只查了两个来源时必须点名未覆盖的两个，并�
     },
   });
 
-  assert.equal(r.coverage.total, 4);
+  assert.equal(r.coverage.total, 5);
   assert.equal(r.coverage.queried, 2);
-  assert.equal(r.coverage.missing, 2);
+  assert.equal(r.coverage.missing, 3);
   assert.equal(r.coverage.complete, false);
-  assert.deepEqual(r.coverage.missingSources, ["veeva_ctv", "chinadrugtrials"]);
-  assert.match(r.coverage.sentence, /只覆盖 2\/4/);
+  assert.deepEqual(r.coverage.missingSources, ["veeva_ctv", "chinadrugtrials", "who_ictrp"]);
+  assert.match(r.coverage.sentence, /只覆盖 2\/5/);
   assert.match(r.coverage.sentence, /Veeva CTV/);
   assert.match(r.coverage.sentence, /药物临床试验登记与信息公示平台/);
+  assert.match(r.coverage.sentence, /WHO ICTRP/);
   assert.match(r.coverage.sentence, /未覆盖不等于没有结果/);
 });
 
-test("覆盖率：四个来源都查过（含 NO_RESULTS）时才算完整", () => {
+test("覆盖率：五个来源都查过（含 NO_RESULTS）时才算完整", () => {
   const r = unified.buildResult({
     sourceResults: {
       clinicaltrials_gov: { state: "SUCCESS", records: [{ id: "NCT07415525" }] },
       chictr: { state: "NO_RESULTS", records: [] },
       veeva_ctv: { state: "NO_RESULTS", records: [] },
       chinadrugtrials: { state: "SUCCESS", records: [{ id: "CTR20240001" }] },
+      who_ictrp: { state: "NO_RESULTS", records: [] },
     },
   });
   assert.equal(r.coverage.complete, true);
   assert.equal(r.coverage.missing, 0);
-  assert.match(r.coverage.sentence, /已覆盖全部 4 处来源/);
+  assert.match(r.coverage.sentence, /已覆盖全部 5 处来源/);
   assert.doesNotMatch(r.coverage.sentence, /未覆盖/);
 });
 
@@ -439,15 +443,16 @@ test("覆盖率：NO_RESULTS 算「查过了」，不得与「没查」混为一
       chictr: { state: "NO_RESULTS", records: [] },
       veeva_ctv: { state: "NO_RESULTS", records: [] },
       chinadrugtrials: { state: "NO_RESULTS", records: [] },
+      who_ictrp: { state: "NO_RESULTS", records: [] },
     },
   });
-  assert.equal(noResults.coverage.complete, true, "四家都查了、都没结果 → 覆盖完整");
-  assert.match(noResults.coverage.sentence, /已覆盖全部 4 处来源/);
+  assert.equal(noResults.coverage.complete, true, "五家都查了、都没结果 → 覆盖完整");
+  assert.match(noResults.coverage.sentence, /已覆盖全部 5 处来源/);
 
   const notQueried = unified.buildResult({ sourceResults: {} });
   assert.equal(notQueried.coverage.complete, false, "一家都没查 → 覆盖不完整");
   assert.equal(notQueried.coverage.queried, 0);
-  assert.match(notQueried.coverage.sentence, /只覆盖 0\/4/);
+  assert.match(notQueried.coverage.sentence, /只覆盖 0\/5/);
 });
 
 test("覆盖率：失败态（TIMEOUT/FAILED 等）一律计入未覆盖", () => {
@@ -457,12 +462,13 @@ test("覆盖率：失败态（TIMEOUT/FAILED 等）一律计入未覆盖", () =>
       chictr: { state: "TIMEOUT", records: [] },
       veeva_ctv: { state: "INDEX_EMPTY", records: [] },
       chinadrugtrials: { state: "SESSION_EXPIRED", records: [] },
+      who_ictrp: { state: "TIMEOUT", records: [] },
     },
   });
   assert.equal(r.coverage.queried, 1);
-  assert.equal(r.coverage.missing, 3);
+  assert.equal(r.coverage.missing, 4);
   assert.equal(r.coverage.complete, false);
-  assert.match(r.coverage.sentence, /只覆盖 1\/4/);
+  assert.match(r.coverage.sentence, /只覆盖 1\/5/);
   assert.match(r.coverage.sentence, /查询超时/);
   assert.match(r.coverage.sentence, /本地索引为空/);
   assert.match(r.coverage.sentence, /会话已失效/);
@@ -477,7 +483,7 @@ test("覆盖率：isQueried 只在 SUCCESS/NO_RESULTS 为真", () => {
   }
 });
 
-test("覆盖率句永远不含「四个来源都没有结果」式误导表述", () => {
+test("覆盖率句永远不含「五个来源都没有结果」式误导表述", () => {
   const r = unified.buildResult({
     sourceResults: { clinicaltrials_gov: { state: "SUCCESS", records: [] } },
   });
