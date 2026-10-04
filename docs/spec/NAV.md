@@ -96,6 +96,7 @@
 - [14-plugin-roadmap.md](07-plugins/14-plugin-roadmap.md)
 - [15-plugin-center.md](07-plugins/15-plugin-center.md)
 - [16-trusted-extensions.md](07-plugins/16-trusted-extensions.md)
+- [xyb-unified-trial-host-orchestration.md](xyb-unified-trial-host-orchestration.md)
 
 ## 8. Meta
 - [README.md](08-meta/README.md)

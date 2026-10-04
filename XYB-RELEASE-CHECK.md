@@ -36,7 +36,7 @@ PROBE_VAULT=/path/to/测试资料库 node scripts/xyb-probe-plugin.mjs \
 | 插件加载 | **8 / 8 通过**（启动日志 `load.success` 全绿，零 error） |
 | 技能注册 | **17 个全部注册**（assistants 9 / skillpack 4 / trial-sources 2 / trials 1 / records 1） |
 | MCP 服务 | **3 / 3 握手成功**（chictr 9 工具、veeva-ctv 12 工具、chinadrugtrials 8 工具） |
-| 临床检索 | **可用**，四个来源全部实测有响应 |
+| 临床检索 | **可用**，已实现的四个来源全部实测有响应（WHO ICTRP 是第 5 个来源，**尚未实现**，不在本次实测范围） |
 | 契约测试 | 离线 6/6、联网 6/6 通过 |
 
 **没有出现此前那类「插件启用了但工具报错」的情况。**

@@ -4,8 +4,14 @@
 **状态：已实现并通过离线回归**
 **上游设计版本：SPEC v8（ADR-F2-01 方案 B）**
 
-本文是 F2 的唯一事实来源：说明**统一查询覆盖哪四个渠道、协调层放在哪、去重到什么程度算证据充分、以及哪些事明确不做**。
+本文是 F2 的**四渠道**事实来源：说明**统一查询覆盖哪四个渠道、协调层放在哪、去重到什么程度算证据充分、以及哪些事明确不做**。
 行为若有变更，必须同步更新本文版本号与「变更记录」。
+
+> **⚠️ 五渠道状态说明（2026-10-04）：** WHO ICTRP 已由用户确定为**第 5 个来源**，其集成规格见
+> [`docs/spec/xyb-unified-trial-host-orchestration.md`](docs/spec/xyb-unified-trial-host-orchestration.md) §15。
+> 该接入**尚未实现**，本文因此仍描述当前已实现的四渠道契约。编排层的部分（协调层位置、完整性责任、
+> 来源描述符）已由该 SPEC §4 / §6 取代；**合并规则与去重语义仍然有效**。待第 5 来源实现后，
+> 本文须升版并改为五渠道表述。
 
 ---
 
@@ -20,7 +26,10 @@
 | `clinicaltrials_gov` | ClinicalTrials.gov | 插件直连官方 API v2（`net.fetch`） | 无，开箱可用 |
 | `chictr` | ChiCTR 中国临床试验注册中心 | MCP 服务 `chictr-mcp-server@2.0.2` | 首次需 npm 拉取 + Playwright Chromium |
 | `veeva_ctv` | Veeva CTV 全球研究库 | MCP 服务 `npx -y ctv-mcp-server@0.1.0` | **开箱可用**：随包分发的种子索引（1352 条）在首次启动时复制到 `~/.ctv-mcp/ctv.db`（见第八节）。仍须注意**全文检索可能漏收 graphql 入库记录**，0 命中时按「本地索引未命中」如实说明，可用 `get_study_detail` 直查绕过 |
-| `chinadrugtrials` | 药物临床试验登记与信息公示平台 | 本机采集器 MCP（`./mcp/chinadrugtrials-mcp.mjs`） | 需 Python 依赖 + 患者本人浏览器会话 |
+| `chinadrugtrials` | 药物临床试验登记与信息公示平台 | 本机采集器 MCP（`./mcp/chinadrugtrials-mcp.mjs`） | 读取本机归档**无副作用**；联网取数需 Python 依赖 + 患者本人浏览器会话 |
+
+> **第 5 渠道（尚未实现）：** `who_ictrp` — WHO ICTRP 全球注册库聚合，形态为随包 vendoring 的 Python MCP 服务
+> （`python3 -m ictrp_mcp.server`），需 Python ≥3.10 + `mcp`/`httpx`/`pydantic`。规格见 SPEC §15。
 
 统一呈现：候选清单、**逐渠道执行状态**、结果数、查询时间、原始来源链接。
 
@@ -207,7 +216,7 @@ cargo test -p host-core --locked             # → 671 passed / 0 failed（exit 
    | `veeva_ctv` | `npx -y ctv-mcp-server@0.1.0`（**已发布到 npm**，MIT）启动成功，暴露 12 个工具；`get_index_stats` → 本地索引 210 条、46 列含 `start_date`。**但 `search_studies {keyword:"YL201"}` 返回 0 命中**，而库中实际有 8 条 | **服务器可用，但全文检索有缺口**，详见第 9 条 |
    | `chinadrugtrials` | MCP 启动成功；`get_collector_status` → `python available=true (venv 3.13.12)`、`collector_deps.ok=true`、`cookie.configured=false`、`ready=false` | **环境就绪**，仅待用户本人配置会话（属正常设计，不得自动化） |
 3. Veeva CTV 旧版本地索引可能报 `no such column: start_date`，按 `INDEX_EMPTY` / `FAILED` 如实呈现。
-4. `chinadrugtrials` 的 `search_trials` 有本地归档副作用；统一查询只做检索，不触发同步/归档任务。
+4. `chinadrugtrials` 的**联网取数**（`search_trials` / `sync_incremental`）有本地归档副作用；统一查询只读取本机已有归档，不触发同步/归档任务。2026-10-04 起 CDE **与其他来源同等纳入扇出**（用户否决了原同意闸门设计），见 SPEC §4.3。
 5. 面板 `views/trials.html` 目前只渲染 CT.gov 单源结果；四渠道统一视图由助手在会话中呈现。
 6. **已更正（v1.1 → v1.2）**：`pnpm build:js` / `pnpm test` 实际**可以运行并通过**。早先记录的「未能运行」是因为 PATH 上的 pnpm 为 9.12.2 且 worktree 无 `node_modules`。把 corepack 缓存的 pnpm 10.34.5 前置到 PATH 后，`pnpm install --frozen-lockfile`、`pnpm build:js`、`pnpm test` 全部 **exit 0**（`cargo test -p host-core` 671 pass）。修正手法见 `XYB-AUDIT-F3-BUILD-TEST-EVIDENCE.md` v2.0。
 7. **已更正（v1.1 → v1.2）**：所谓「168 个基线既有失败」是**隔离 worktree 缺 `node_modules` 导致的假失败**，不是既有债务、不是代码缺陷。安装依赖后 `apps/desktop` 全量测试为 **3203 pass / 0 fail**。这一条修正依据项目原则：缺依赖时不得把解析失败当作缺陷立项。详见 `XYB-AUDIT-F3-BUILD-TEST-EVIDENCE.md` v2.0 的更正表。
@@ -372,7 +381,7 @@ cargo test -p host-core --locked             # → 671 passed / 0 failed（exit 
 
 ## 九、随包分发与数据刷新（v1.8 起）
 
-四个渠道中，只有渠道 3（Veeva CTV）需要**本地索引**才能检索。为了做到「开箱即用」，
+已实现的四个渠道中，只有渠道 3（Veeva CTV）需要**本地索引**才能检索。为了做到「开箱即用」，
 索引随安装包分发；但分发副本是**只读种子**，不是运行时数据。
 
 ### 9.1 为什么不能直接用包内那份

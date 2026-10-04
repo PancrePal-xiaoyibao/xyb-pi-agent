@@ -219,6 +219,27 @@ launch local processes. If you would rather not, leave it disabled — nothing a
 > If a source is unreachable, we say "this one could not be reached" rather than
 > substituting results from another source.
 
+#### Two ways to reach WHO ICTRP — and why we use the public one
+
+There are two separate channels, and they are **not** the same thing:
+
+| | **WHO ICTRP Search Portal** (what we use) | **ICTRP Search Portal Web Service** (not used) |
+|---|---|---|
+| What it is | The public search portal at `trialsearch.who.int` | An official XML Web Service published by WHO for real-time queries against the ICTRP database |
+| Access | Open — plain HTTP, no key | **Not open self-service**: you apply as a partner/user; WHO states access fees are quoted per request, and there is no public API-key signup |
+| Protocol | HTML over HTTP | XML Web Service (not REST/JSON, not MCP) |
+| Scope | Global registries, including ChiCTR, ClinicalTrials.gov, ACTRN and others | The full ICTRP database, intended for research use, registries, government bodies, WHO units and other research institutions |
+| How we use it | **Two ways:** (1) as a lookup aid for ChiCTR records, and (2) as the fifth unified-query source via the bundled `ictrp_search` MCP tool (planned — see the host-orchestration SPEC §15) | Not at all |
+
+**We deliberately use the public search portal, not the Web Service.** The Web Service is
+the more official channel and would be the better long-term route, but it requires a
+partner agreement and a quoted fee — it cannot be shipped as a default path in a
+free desktop tool. We document it here so the option is visible rather than
+rediscovered later, and so nobody mistakes the portal for an official API.
+
+> If this project ever gains a funded or partnered route, the Web Service is the
+> upgrade path. Until then, everything below uses the open portal.
+
 ### 4. External skills (from opencare-skillhub)
 
 These 4 are not built in-house; they live in `xyb.skillpack`. **Enabling the plugin is all it takes** —
@@ -272,6 +293,8 @@ to `solid tumor` took the result from 6 trials to 20.
 | Upstream foundation | [vastsa/PI-Desktop](https://github.com/vastsa/PI-Desktop) (LGPL-3.0) |
 | 小胰宝 customisation | [PancrePal-xiaoyibao/xyb-pi-agent](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent) |
 | ChiCTR MCP server | [chictr-mcp-server](https://www.npmjs.com/package/chictr-mcp-server) (Apache-2.0) |
+| WHO ICTRP Search Portal | [trialsearch.who.int](https://trialsearch.who.int/Default.aspx) — public portal; used for ChiCTR lookups and as the fifth unified-query source (`ictrp_search`, planned) |
+| WHO ICTRP Search Portal Web Service | Official XML Web Service for real-time ICTRP queries; partner access and per-request fee apply, **not used by this project** |
 | China Drug Trials collector | [PancrePal-xiaoyibao/chinadrugtrials-collector](https://github.com/PancrePal-xiaoyibao/chinadrugtrials-collector) |
 | Advanced trial matching | [opencare-skillhub/clinical-trial-matching](https://github.com/opencare-skillhub/clinical-trial-matching) |
 | Record organiser | [opencare-skillhub/Medical-Record-Organizer](https://github.com/opencare-skillhub/Medical-Record-Organizer) |
