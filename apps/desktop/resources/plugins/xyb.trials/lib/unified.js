@@ -150,6 +150,53 @@ function sourceStatus(source, input) {
   };
 }
 
+/**
+ * 状态是否代表"这一处真的查过了"。
+ *
+ * 只有 SUCCESS 与 NO_RESULTS 算查过（NO_RESULTS 是"查了、没有"，
+ * 与"没查"是两件事）。其余状态一律归为"未取得结果"。
+ */
+function isQueried(state) {
+  return state === "SUCCESS" || state === "NO_RESULTS";
+}
+
+/**
+ * 「本次查询覆盖了哪几处」的汇总句，供助手与面板原样呈现。
+ *
+ * 存在的理由：2026-10-04 实测到助手只查了 CT.gov 与 ChiCTR 就结束回合，
+ * Veeva 与中国药物登记平台一次都没调，且不报错——用户会拿到一个"看起来
+ * 是四渠道汇总、实际只有两个渠道"的答案。覆盖句强制把这件事说出来。
+ *
+ * 约定：只要有没有查的来源，句子必须以「未覆盖」明确收尾，
+ *      不得让读者把沉默读成"零结果"。
+ */
+function coverageSentence(statuses) {
+  const list = toArray(statuses);
+  const total = list.length;
+  const queried = list.filter((s) => isQueried(s.state));
+  const missing = list.filter((s) => !isQueried(s.state));
+
+  if (total === 0) return "本次没有可汇总的来源。";
+
+  const queriedNames = queried.map((s) => s.displayName || SOURCE_LABELS[s.source] || s.source);
+
+  if (!missing.length) {
+    return `本次已覆盖全部 ${total} 处来源（${queriedNames.join("、")}）。`;
+  }
+
+  const missingParts = missing.map((s) => {
+    const name = s.displayName || SOURCE_LABELS[s.source] || s.source;
+    return `${name}（${s.explanation || defaultExplanation(s.state)}）`;
+  });
+
+  return (
+    `本次只覆盖 ${queried.length}/${total} 处来源：` +
+    (queriedNames.length ? queriedNames.join("、") : "无") +
+    `。未覆盖：${missingParts.join("；")}。` +
+    `未覆盖不等于没有结果。`
+  );
+}
+
 function defaultExplanation(state) {
   switch (state) {
     case "SUCCESS":
@@ -368,12 +415,25 @@ function buildResult({ query, sourceResults }) {
 
   const { records, mergeCandidates } = dedupe(allRecords);
 
+  // Layer 2 契约：覆盖率必须随结果一起返回，使"漏查"可见。
+  // 助手与面板都必须原样呈现 coverage.sentence，不得只报条数。
+  const coverage = {
+    total: statuses.length,
+    queried: statuses.filter((s) => isQueried(s.state)).length,
+    missing: statuses.filter((s) => !isQueried(s.state)).length,
+    complete: statuses.every((s) => isQueried(s.state)),
+    queriedSources: statuses.filter((s) => isQueried(s.state)).map((s) => s.source),
+    missingSources: statuses.filter((s) => !isQueried(s.state)).map((s) => s.source),
+    sentence: coverageSentence(statuses),
+  };
+
   return {
     query: {
       keywords: text(query && (query.keywords || query.terms)),
       condition: text(query && query.condition),
     },
     statuses,
+    coverage,
     sourcesQueried: statuses.filter((s) => s.state === "SUCCESS" || s.state === "NO_RESULTS").length,
     sourcesUnavailable: statuses.filter(
       (s) => s.state !== "SUCCESS" && s.state !== "NO_RESULTS",
@@ -400,4 +460,6 @@ module.exports = {
   buildResult,
   compareRecords,
   isDomestic,
+  isQueried,
+  coverageSentence,
 };

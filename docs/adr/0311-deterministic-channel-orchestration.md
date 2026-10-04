@@ -1,211 +1,323 @@
-# ADR 0311: Deterministic channel orchestration for the unified trial query
+# ADR 0311: Reliable routing and orchestration for unified trial queries
 
-- Status: Proposed
+- Status: Accepted (architectural direction; implementation SPEC approval required)
 - Date: 2026-10-04
+- Scope note: this ADR was written when the unified query covered four sources.
+  WHO ICTRP was confirmed as the fifth source on 2026-10-04; the orchestration
+  direction here is source-count-agnostic and carries over unchanged, with the
+  fifth source's contract, deadlines, and acceptance criteria defined in the
+  host-orchestration SPEC §15. References to "four" below are historical.
 
 ## Context
 
-The unified trial query (`XYB-TRIAL-UNIFIED-QUERY.md`, v1.11) spans four channels:
-ClinicalTrials.gov, ChiCTR, Veeva CTV, and the China drug trial registry. Per
-[ADR-F2-01](#relationship-to-adr-f2-01), the coordination layer is **assistant
-orchestration**: the model reads the `unified-trial-query` skill, calls each
-channel's tool, then hands the raw per-source results to the deterministic pure
-merge function in `xyb.trials/lib/unified.js` via `xyb_trials_unify`.
+The unified clinical-trial query covers four independently implemented sources:
+ClinicalTrials.gov, ChiCTR, Veeva CTV, and the China drug trial registry. The
+existing design (ADR-F2-01 and `XYB-TRIAL-UNIFIED-QUERY.md` v1.11) assigns
+coordination to the assistant: it is expected to load a skill, call each
+source's tool, then pass per-source results to `xyb_trials_unify`, whose
+`lib/unified.js` merge logic is deterministic.
 
-This was a deliberate choice — plugins cannot invoke another plugin's MCP tools
-(namespacing is per-source-plugin, and the SDK exposes no cross-plugin call API),
-so a fully in-plugin coordinator was not available without an architectural
-change.
+This design has two separate reliability questions that must not be conflated:
 
-**The observed failure mode (2026-10-03, reproduced).** A user asked, in
-plain language, how many trials each channel had for IBI343. The assistant
-**never called any channel tool**. It used a generic page-fetch tool three
-times against JS-rendered search pages
-(`clinicaltrials.gov/search?term=IBI343`,
-`chinadrugtrials.org.cn/search.html?keyword=IBI343`,
-`chictr.org.cn/search?keyword=IBI343`) and all three failed. The user then
-reported the root cause themselves:
+1. **Intent routing:** does an arbitrary natural-language user message enter
+   trial-query handling at all?
+2. **Execution and reporting:** once trial-query handling starts, are all
+   eligible sources attempted, and are every source's result and failure
+   represented faithfully?
+
+### Observed failures
+
+**2026-10-03: routing missed.** A user asked how many trials each channel had
+for IBI343. The assistant did not call any channel tool; it tried generic page
+fetches against JS-rendered search/list pages for ClinicalTrials.gov, ChiCTR,
+and the China drug trial registry. All failed. The user summarized the failure:
 
 > 手没加载技能 → 不知道有四个渠道 → 只能拿通用工具去抓网页。
 > 用优先级保证先用工具，无效后用浏览器托底可以考虑吗
 
-The skill was not loaded because its `description` triggered on **intent
-phrasing** ("找临床试验", "统一查询") while the user asked a **statistical
-phrasing** question ("按渠道汇总 IBI343 的数量"). Nothing was broken in code;
-the orchestration simply never started.
+The skill description matched intent phrasing such as “找临床试验” and
+“统一查询”; the user phrased a statistical question (“按渠道汇总 IBI343 的
+数量”). Expanding skill applicability text and adding priority guidance to
+always-listed tool descriptions improved this case, but neither mechanism
+forces model routing or tool selection.
 
-**Why the current mitigation is insufficient.** Two mitigations shipped
-(XYB-TRIAL-UNIFIED-QUERY.md v1.11):
+**2026-10-04: routing worked, fan-out did not.** In a live app run, the assistant
+loaded `unified-trial-query`, called the ClinicalTrials.gov search tool, then
+ChiCTR `search_trials`, and ended the turn. Veeva CTV and the China drug trial
+registry were not queried; `xyb_trials_unify` was not called. The user could
+therefore receive a plausible partial answer without an explicit indication
+that two sources were omitted. This demonstrates that skill activation and
+successful tool selection do not guarantee complete execution.
 
-1. Widened skill `description` to cover statistical phrasings.
-2. Priority rules pushed into the **tool descriptions** of
-   `xyb_trials_search` / `xyb_trials_unify` — these are resident in the tool
-   list and do not depend on skill matching.
+### Verified plugin/host boundary
 
-Both are **probabilistic**. Skill activation is a model judgment over a
-free-text catalog; tool selection is likewise a model choice. Neither provides
-any guarantee. There is a hard ceiling here: **user phrasings cannot be
-enumerated**. Every widened trigger list is a patch for the phrasings someone
-already thought of, and the next unseen phrasing fails the same way. A
-failure mode that depends on the model *remembering* to choose correctly is not
-fixed by better prose — it is only made less frequent.
+The four channel MCP tools belong to `xyb.trial-sources`; the query and panel
+belong to `xyb.trials`. The plugin SDK exposes tools for a plugin to register,
+plus model, network, bus, and service APIs, but no API for one plugin to invoke
+another plugin's MCP tools. A panel `bridge.invoke` is forwarded to that
+plugin's own `onPanelInvoke` (`apps/desktop/electron/main/plugin-runtime.ts:2225`);
+it does not cross this boundary. `pi.bus` is publish/subscribe, not a
+request/response RPC with caller identity, response correlation, or timeout.
 
-The specific harm is compounding: when orchestration silently does not start,
-the user receives an **incomplete answer with no indication that it is
-incomplete**. Channels that were never queried are indistinguishable from
-channels that were queried and returned nothing — precisely the
-"不可用 ≠ 0 条" failure the SPEC already forbids at the data layer, but which
-remains reachable at the orchestration layer.
+Consequently, neither an `xyb.trials` panel button nor an in-plugin
+`xyb_trials_unify` function can itself dispatch all four existing channel MCP
+tools. A host capability is required for deterministic cross-plugin fan-out
+without collapsing source ownership or bypassing source permissions.
 
 ## Decision
 
-Adopt a **three-layer defense**, ordered by determinism, and be explicit that
-only the first layer is actually guaranteed:
+Treat intent routing, source execution, and result presentation as separate
+responsibilities. The target architecture is a **host-owned unified trial-query
+orchestrator, exposed to both chat and the trial panel**, with conservative
+natural-language routing and an explicit fallback when intent is uncertain.
+This ADR has been accepted as the bounded architectural direction, not as
+implementation authorization. The implementation SPEC must resolve the
+permission-mediated child invocation contract, consent UX, source eligibility,
+lifecycle, and side-effect gates before coding. No implementation may begin
+until that SPEC is explicitly approved.
 
-### Layer 1 — Panel-initiated orchestration (deterministic, implement first)
+### 1. Intent routing: high-confidence automatic route, clarify on uncertainty
 
-The `xyb.trials` panel gets explicit entry points that run the full
-four-channel sweep over a **code path**, not a model path. The panel calls
-`bridge.invoke("xyb.trials.unify", {...})` and the plugin panel script drives
-the per-channel calls.
+Do not promise that any finite trigger list or classifier will recognize every
+possible phrasing. Skill applicability and tool descriptions remain useful
+supporting guidance, not correctness mechanisms.
 
-Consequence: pressing the button **always** queries all enabled channels. No
-skill loading, no trigger matching, no model discretion. This is the only layer
-that converts the failure mode into an impossibility rather than a rarity.
+For chat:
 
-Scope limit: a panel button is a *user-initiated* guarantee, not an ambient
-one. It does not help a user who asks in chat and never opens the panel.
+- Route high-confidence clinical-trial search/count intent to the unified
+  query entry point.
+- If intent is ambiguous, ask a short clarification rather than silently
+  scraping registry search pages or presenting a partial answer as complete.
+- Offer an explicit “找临床试验” action/entry point that bypasses natural-
+  language intent classification.
 
-### Layer 2 — Orchestration status is always explicit (deterministic, implement with Layer 1)
+Measure routing on a representative, versioned corpus of real and paraphrased
+queries, including count/statistical wording, Chinese colloquialisms, mixed
+Chinese/English drug names, follow-up turns, negatives, and unrelated medical
+questions. Track recall and false-trigger rate separately; set acceptance
+thresholds during implementation design. Do not describe the classifier as
+100% reliable.
 
-Whatever path produced the answer — panel or assistant — the result **must**
-carry a machine-checkable per-channel status block, and any channel that was
-*not queried* must be reported as `NOT_ENABLED` with an explicit
-"本次查询未包含该来源" explanation.
+### 2. Execution: one host-owned composite orchestration entry point
 
-This already exists in `lib/unified.js`. The gap is that the **assistant can
-bypass it entirely** by answering without calling `xyb_trials_unify`. Therefore
-this layer additionally requires: when the assistant answers a
-clinical-trial-count question, it must route through the merge function so the
-status block is present. Enforcement is via Layer 3.
+Once a request is classified as a trial query—or the user enters through the
+explicit action—the host invokes one composite operation. It dispatches to the
+four existing source capabilities while preserving each source plugin's
+configuration, permission, network-domain, and setup boundaries. It must not
+reimplement a source scraper inside `xyb.trials`, merge the source plugins, or
+silently grant cross-plugin permissions.
 
-The invariant: **an incomplete answer must be visibly incomplete.** Silence
-must never be readable as "zero results".
+The same host-owned operation must serve chat and the panel; the panel must not
+attempt cross-plugin MCP calls through `xyb.trials`' bridge. The existing
+`xyb.trials` pure merge/normalization function can remain the merge component
+if its contract fits the host interface; its presence does not itself perform
+fan-out.
 
-### Layer 3 — Host-level interception (deferred, requires separate decision)
+**Invocation boundary (security requirement).** Source MCP calls are
+represented by registered `RegisteredPluginTool` entries in
+`PluginRuntime.getTools()` and their `execute` closures preserve source-plugin
+liveness, settings, MCP call cancellation, and source attribution. However,
+calling a closure directly from a composite would bypass host-core's ordinary
+`tools.execute` permission decision, approval prompt, mode handling, admission,
+turn-dispatchability check, and child-tool audit. Calling `McpServerClient`
+directly would bypass still more policy/lifecycle checks. Therefore the
+composite MUST NOT invoke registered closures or raw MCP clients as a shortcut.
+Each child dispatch must pass through the normal host-core `tools.execute`
+policy path with a unique child tool-call identity and the original session /
+turn identity. If current architecture cannot re-enter that path for nested
+calls, add a narrowly scoped host-core child-dispatch RPC that applies
+semantically equivalent per-child risk/permission/approval, cancellation,
+turn-validity, admission, and audit. A composite-level approval alone is not
+proof of per-source authorization; registered/enabled source plugins alone are
+not proof of per-call user consent.
 
-Deferred options, in increasing intrusiveness:
+The orchestration contract is **attempt every eligible source**, not “always
+obtain four usable results.” A source is eligible only when its plugin is
+enabled in the active project, its exact MCP tool is registered and live, its
+MCP server permission/configuration checks passed, its source prerequisites are
+satisfied, and the current per-tool permission decision allows invocation.
+Missing/unregistered tools, disabled plugins, missing setup, explicit consent
+denial, deadline expiry before dispatch, and lifecycle changes have distinct
+reasons and must not be collapsed into `NOT_ENABLED`. Each source must receive
+an explicit terminal status even if another source fails. One timeout, rate
+limit, challenge, or source error must not discard successful results from
+other sources.
 
-- **(3a) Deny list-page fetching.** The host refuses page-fetch calls whose URL
-  matches a channel's search-list pattern (`/search?...`, `?keyword=...` on the
-  four channel domains), returning an actionable message naming the channel
-  tool that should be used instead. This is a **guardrail, not an
-  orchestrator** — it stops the wrong action, it does not start the right one.
-- **(3b) Forced skill injection.** When the host detects a trial-related intent
-  it injects the unified-query skill body directly, bypassing model discretion.
-  Requires locating the `# Skills` prompt-assembly point, which was **not found**
-  during this investigation (`grep` for `# Skills` / `skillsSection` /
-  `skillCatalog` over `apps/desktop/electron/main/*.ts` returned nothing;
-  assembly likely lives in `packages/` or `crates/host-core`).
-- **(3c) Host-level composite tool.** A host-owned tool that fans out to all
-  four channel MCP servers and returns merged output. This removes model
-  orchestration from the path entirely and is the only option that fixes the
-  *chat* case as well as the panel case. It is also the largest change: it
-  moves orchestration ownership from plugin to host and must answer how
-  per-plugin permission and network-domain grants are honored for a tool that
-  acts across four plugins.
+Bounded parallel execution may reduce wall-clock latency, but is not assumed
+safe until per-source concurrency, rate limits, cancellation, and resource
+lifecycle have been verified. ChiCTR has been observed taking about 9.9–12.7
+seconds; the China registry scrape about 8 seconds. The host design must define
+per-source deadlines, an overall deadline, progress/cancellation behavior, and
+how late results are handled.
 
-**This ADR does not decide Layer 3.** Layers 3a–3c each require their own
-decision because each touches host architecture, permission semantics, or both.
-Recording them here as the considered option space.
+### 3. Result contract: distinguish execution state from result count
 
-### Non-decision: do not keep widening trigger phrases
+The composite operation returns structured, machine-readable per-source
+statuses, records, error categories, and coverage metadata. At minimum, the
+status model must distinguish:
 
-Rejected as the primary strategy. Trigger widening remains useful as a cheap
-supporting measure, but treating it as *the* fix means accepting an
-unbounded patch treadmill for a failure mode that is deterministic in nature.
+- `SUCCESS`: source queried and returned one or more records.
+- `NO_RESULTS`: source queried successfully and returned zero matching records.
+- `NOT_ENABLED`: user/source configuration explicitly disables it.
+- `NEEDS_SETUP`: required setup, dependency, local index, or session is missing.
+- `NOT_QUERIED`: orchestration did not dispatch the source (for example,
+  ineligible, explicitly skipped, or not started); include a reason.
+- `TIMEOUT`, `FAILED`, `CHALLENGE_REQUIRED`, and other actionable terminal
+  failures as appropriate.
+
+`NOT_QUERIED` must never be rendered as `NO_RESULTS`; `NOT_ENABLED` must not be
+used as a catch-all for “we do not know whether this ran.” The current
+`lib/unified.js` convention that maps an absent source result to `NOT_ENABLED`
+needs evolution before it can represent all orchestration outcomes honestly.
+
+The host UI renders the status and coverage block from this structure; it must
+not rely solely on the assistant to copy a sentence from tool output. The
+assistant may explain results, but cannot override source status or claim a
+complete four-source search if any source was not queried or did not complete.
+“Not covered” is not “no results.” Partial success is valid and useful only
+when its incompleteness is visible.
+
+### 4. Source-specific side effects and permissions
+
+> **Superseded in part (2026-10-04, by the SPEC, pending approval).** The paragraph
+> below excludes the China drug trial registry's archive-producing search from
+> unattended fan-out behind a consent gate. The user vetoed that consent gate:
+> writing a local archive is not a destructive operation, and prompting on every
+> query recreates exactly the "user is forced to hand-type tool names" failure
+> mode this ADR exists to eliminate. The approved direction is now **CDE is
+> fanned out equally with every other source, reading its local archive**, which
+> is side-effect-free; only networked collection (`search_trials`,
+> `sync_incremental`) stays out of the query fan-out. See the SPEC §4.3, §3.1
+> and §5.2. The original text is retained below for history and must not be
+> implemented as written.
+
+The China drug trial registry's current `search_trials` writes raw HTML, JSON,
+and Word archives locally as part of scraping. For the initial composite
+operation, **exclude this archive-producing search from unattended fan-out**.
+Return `NOT_QUERIED` with reason `SIDE_EFFECT_CONSENT_REQUIRED` unless and until a
+separately reviewed consent flow or a side-effect-free search capability is
+implemented. This decision prevents an ordinary query or model `auto` mode
+from silently initiating local archival. `setup_environment`, `update_cookie`,
+and `refresh_cookie` are never implicit query steps.
+
+The composite host broker uses only fixed registered source tools; it does not
+accept arbitrary plugin/tool names, network URLs, or executable paths from the
+model. Registration must continue to enforce source plugin `mcp.server.local`
+(or `.remote` for HTTP), HTTP egress grants, plugin-owned settings/config
+references, and redirect checks. Per-call host-core risk/permission policy
+remains authoritative. Audit records must attribute each child call to both
+the composite and the original plugin/server/tool. No credential values or
+archived contents enter audit logs.
+
+### 5. Browser fallback is limited
+
+Tool-first guidance remains useful. Generic browser/page-fetch scraping of
+JS-rendered registry search/list pages is not a fallback for channel APIs and
+must not be presented as equivalent evidence. Browser use may supplement a
+specific record/detail page after an identifier is known, with provenance kept
+separate from source-query results. A host deny-list may be considered as a
+defense-in-depth guardrail, but it does not replace intent routing or composite
+orchestration.
 
 ## Consequences
 
-**Positive**
+**Expected benefits**
 
-- Layer 1 makes the four-channel sweep reliable for panel users with no
-  dependency on model behavior.
-- Layer 2 guarantees that partial results are never presented as complete —
-  this holds regardless of which layer produced the data.
-- Naming Layer 3 now prevents the option space from being rediscovered later,
-  and prevents Layer 1 from being mistaken for a complete fix.
+- Once the unified operation is invoked, a single host-owned path controls
+  fan-out for both chat and panel, rather than asking the model to remember four
+  independent calls.
+- Partial failure is isolated and visible; the UI can distinguish zero results
+  from disabled, unconfigured, unqueried, timed-out, or failed sources.
+- Natural-language routing is treated as measurable and fallible. Ambiguity has
+  an explicit clarification path, and users retain a deterministic explicit
+  entry point.
+- Source adapters remain independently owned, preserving permission and
+  configuration boundaries.
 
-**Negative / accepted costs**
+**Costs and limits**
 
-- Layer 1 adds surface to the panel and duplicates some orchestration logic
-  that the skill also describes (two descriptions of one sequence — they can
-  drift; the shared contract lives in `lib/unified.js`, which both must use).
-- **The chat path remains probabilistic until Layer 3.** This ADR knowingly
-  leaves the original user complaint only partially fixed. This must not be
-  reported as resolved.
-- Layer 2 depends on assistant compliance, which is not enforceable without
-  Layer 3. It is a correctness *contract*, not a mechanism.
+- This requires host architecture work: composite operation registration,
+  permission mediation, bounded fan-out, structured result transport, and UI
+  rendering. It is not achievable by editing only the `xyb.trials` plugin.
+- Natural-language recognition remains imperfect. The explicit entry point
+  and clarification behavior reduce the impact but do not make arbitrary
+  phrasing recognition deterministic.
+- “All four attempted” is conditional on eligibility and consent; it does not
+  mean all four succeeded or returned records.
+- Latency and source side effects may make unattended fan-out inappropriate
+  until deadlines, progress, consent, and rate-safety are resolved.
 
-**Risks**
+## Alternatives considered
 
-- If the panel sweep runs all four channels synchronously it may be slow
-  (ChiCTR measured 9.9s, CDE live scrape ~8s) and may trip rate limits when
-  repeated. Needs progress reporting and per-channel timeout handling before
-  shipping.
-- The chinadrugtrials channel has an **archive side effect** on search
-  (already a known limitation, XYB-TRIAL-UNIFIED-QUERY.md): a panel button that
-  silently triggers a scrape is a different user expectation than a search
-  button. Must be surfaced, not hidden.
+**A. Keep widening skill trigger phrases and tool descriptions.** Retain as
+supporting guidance only. Rejected as the primary reliability strategy because
+phrasing is open-ended, and the live run showed that even a loaded skill did not
+ensure all four tools were called.
 
-## Alternatives
+**B. Plugin-only panel orchestration plus status contract.** Rejected as the
+solution to four-source execution: the panel's plugin cannot invoke the other
+plugin's MCP tools. A panel-only status display can expose incompleteness but
+cannot perform the promised fan-out. The panel should call the same host
+composite operation as chat once that operation exists.
 
-**A. Widen trigger phrases only** (status quo of v1.11). Rejected as primary:
-probabilistic, unbounded, and fails on unenumerated phrasings. Kept as
-support.
+**C. Host-owned composite orchestration shared by chat and panel.** Recommended
+target direction in this ADR. After the operation is invoked and child
+permission decisions allow dispatch, it attempts each eligible source and
+centralizes structured status reporting. Every per-source MCP child call must
+re-enter host-core's normal `tools.execute` policy path (or a separately
+reviewed equivalent host-core child-dispatch contract); direct callback/client
+invocation is prohibited. Initial unattended fan-out excludes archive-producing
+CDE search. This does not guarantee that arbitrary user phrasing is recognized;
+routing, clarification, and explicit entry remain separate requirements.
 
-**B. Panel-initiated orchestration + explicit status contract** (Layers 1+2,
-**chosen**). Low cost, no host change, fully deterministic for panel users.
-Cannot fix the chat path.
+**D. Let `xyb.trials` call the source MCP servers itself or absorb them.**
+Rejected: the SDK has no MCP invocation API, and combining source implementations
+would undermine plugin ownership and permission isolation.
 
-**C. Host-level composite tool** (Layer 3c). The only complete fix — makes the
-chat path deterministic too. Rejected *for now* because it is an architecture
-and permission-semantics change beyond the authorized scope
-(M1+M2+M4+M5+M6). Should be revisited on its own merits.
+**E. Use `pi.bus` as request/response RPC.** Rejected for this purpose: the
+verified API is publish/subscribe and provides no request correlation, caller
+identity, response channel, or timeout contract. A future host-owned RPC would
+be a new capability, not an existing bus feature.
 
-**D. Make the plugin call the four MCP servers itself.** Re-examined and
-**rejected** on the M2.0 capability audit: MCP tools are namespaced to the
-source plugin and the SDK exposes no cross-plugin invocation API. Absorbing
-`mcp.server.local` into `xyb.trials` would also break the permission isolation
-that ADR-F2-01 established.
-
-**E. `pi.bus` request/response.** Rejected: `pi.bus` is fire-and-forget with no
-caller identity, no reply channel, and no timeout — unusable for aggregation.
+**F. Deny registry search-page fetching at the host.** Possible defense in
+depth to prevent a known ineffective action. Rejected as the primary solution:
+it stops some wrong calls but neither recognizes the user's intent nor starts
+the channel tools.
 
 ## Relationship to ADR-F2-01
 
-ADR-F2-01 chose "assistant skill orchestration + deterministic pure-function
-merge" as the coordination layer. This ADR is **not a reversal**: it keeps that
-merge layer (`lib/unified.js`) as the single source of truth and adds explicit
-entry points and an explicit status contract around it.
-
-It is, however, a **documented narrowing of ADR-F2-01's confidence**: that ADR
-treated assistant orchestration as sufficient. Observation since then shows it
-is sufficient *when it runs* and silently absent when it does not. ADR-F2-01's
-decision stands for the merge layer; its orchestration assumption is amended by
-Layers 1–3 above.
+ADR-F2-01 selected assistant-driven source orchestration with deterministic
+pure-function merge because plugins could not call one another's MCP tools.
+This ADR preserves the merge logic's role but revises the orchestration
+assumption in light of live evidence: assistant orchestration can work, but it
+is not a guarantee of complete fan-out. The target is now a host-owned
+composite operation that invokes source-owned capabilities under their existing
+boundaries and may reuse the pure merge component. This is an architectural
+direction requiring review; it does not silently amend implementation scope or
+authorize host changes.
 
 ## Evidence
 
-- 2026-10-03 user screenshot: three generic page fetches against channel search
-  pages, all failed; no channel tool called.
-- `apps/desktop/resources/plugins/xyb.trials/skills/unified-trial-query.md` —
-  skill description widened; priority section added.
-- `apps/desktop/resources/plugins/xyb.trials/main.js` — priority rules in
-  `xyb_trials_search` / `xyb_trials_unify` tool descriptions.
-- Post-restart log: assistant switched to channel tools
-  (`plugin_xyb_trial_sources_veeva_ctv_search_studies ok:true`, ChiCTR
-  `search_trials` invoked) — i.e. mitigation works *when the skill loads*.
-  This is the probabilistic layer, and it succeeded on this phrasing.
-- `apps/desktop/resources/plugins/xyb.trials/lib/unified.js` — the
-  deterministic status/merge contract that Layers 1 and 2 both consume.
+- 2026-10-03 user-reported run: generic fetches against ClinicalTrials.gov,
+  ChiCTR, and China registry search/list pages; no channel tools were called and
+  the fetches failed.
+- 2026-10-04 app logs: `Skill` loaded at 22:44:54; CT.gov search completed at
+  22:45:00 (~948 ms); ChiCTR `search_trials` completed at 22:45:12 (~12.661 s);
+  turn ended without Veeva CTV, China registry, or `xyb_trials_unify` calls.
+  This is evidence that skill routing can improve while complete fan-out still
+  fails.
+- `packages/plugin-sdk/src/index.ts`: `pi` exposes agent registration/completion,
+  model listing, network, bus, and services APIs, but no MCP tool invocation API.
+- `apps/desktop/electron/main/plugin-runtime.ts:2225`: unhandled panel channels
+  are forwarded to the calling plugin's `onPanelInvoke`; this is not a
+  cross-plugin MCP dispatcher.
+- `apps/desktop/resources/plugins/xyb.trials/lib/unified.js`: deterministic
+  normalization/merge/status function; it only processes supplied per-source
+  results and does not dispatch queries.
+- `XYB-TRIAL-UNIFIED-QUERY.md` v1.11: records source setup/limitations and the
+  archive side effect on China registry search; source latency observations are
+  approximately 9.9–12.7 s for ChiCTR and approximately 8 s for the China
+  registry scrape.
+- The existing skill and tool descriptions contain tool-first guidance. Their
+  presence is useful but is not host enforcement or evidence of guaranteed
+  intent recognition.

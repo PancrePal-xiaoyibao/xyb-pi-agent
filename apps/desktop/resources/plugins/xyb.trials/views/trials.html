@@ -53,6 +53,15 @@
         background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
         line-height: 1.7; color: var(--body);
       }
+      .coverage {
+        display: none; margin-top: 12px; padding: 10px 12px;
+        border: 1px solid var(--line); border-radius: 8px;
+        background: var(--soft); color: var(--body); font-size: 11.5px; line-height: 1.7;
+      }
+      .coverage.partial { display: block; border-color: #c58b32; }
+      .coverage.complete { display: block; border-color: var(--mint); }
+      .coverage-title { font-weight: 600; margin-bottom: 4px; }
+      .coverage-source { color: var(--muted); }
       .list { margin-top: 16px; }
       .card {
         border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; margin-bottom: 9px;
@@ -79,12 +88,15 @@
 
     <div class="bar">
       <input type="text" id="q" placeholder="例如：胰腺癌 KRAS" />
-      <button class="btn" id="go">检索</button>
+      <button class="btn" id="go">单源检索</button>
+      <button class="btn" id="coverage-go" title="显示四个来源的状态；本面板只能直接查询 ClinicalTrials.gov">按渠道汇总</button>
     </div>
 
     <div class="disclaimer">
       以下为公开试验信息整理，供参考，不构成医疗建议。是否符合入组条件，需由研究医生结合病情判断。
     </div>
+
+    <div class="coverage" id="coverage"></div>
 
     <div class="list" id="list">
       <div class="empty">还没有检索结果。输入关键词后点「检索」。</div>
