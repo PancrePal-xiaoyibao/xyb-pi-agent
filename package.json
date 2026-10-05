@@ -1,7 +1,7 @@
 {
   "name": "pi-desktop",
   "private": true,
-  "version": "0.16.1",
+  "version": "0.17.0",
   "description": "Local-first AI coding agent desktop client",
   "packageManager": "pnpm@10.34.5",
   "engines": {
@@ -53,6 +53,8 @@
     "check:release-docs": "node scripts/check-release-docs.mjs",
     "check:agent-policy": "node scripts/check-agent-policy-sync.mjs",
     "check:pr-base": "node scripts/check-pr-base-main.mjs",
+    "check:ictrp-vendor": "node scripts/xyb-check-ictrp-vendor.mjs",
+    "check:spec-mirror": "node scripts/check-spec-mirror-parity.mjs",
     "docs:dev": "pnpm --filter @pi-desktop/docs dev",
     "docs:build": "pnpm --filter @pi-desktop/docs build",
     "docs:preview": "pnpm --filter @pi-desktop/docs preview",

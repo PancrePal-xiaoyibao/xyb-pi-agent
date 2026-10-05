@@ -141,3 +141,71 @@ def mask_cookie(cookie_text):
             shown = f'{value[:4]}...{value[-4:]}'
         masked.append(f'{name}={shown}')
     return '; '.join(masked)
+
+
+def _refresh_cli(argv=None):
+    """刷新站点下发的反爬 Cookie，并（可选）合并进 config.json。
+
+    只更新站点自己下发的字段（FSSBBIl...S/T），**不会**覆盖浏览器登录态字段，
+    也不生成、不猜测任何凭据。返回 JSON 只含字段名与掩码，绝不含 Cookie 值。
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='刷新站点下发的反爬 Cookie（不触碰登录态字段）'
+    )
+    parser.add_argument('--config', help='config.json 路径；给了才写回')
+    parser.add_argument('--timeout', type=int, default=30)
+    parser.add_argument(
+        '--required-only',
+        action='store_true',
+        help='只返回成败与字段名，不写盘',
+    )
+    args = parser.parse_args(argv)
+
+    result = {
+        'ok': False,
+        'bootstrap_url': DEFAULT_BOOTSTRAP_URL,
+        'fetched_fields': [],
+        'merged_fields': [],
+        'written': False,
+    }
+
+    try:
+        incoming, status = fetch_bootstrap_cookie(timeout=args.timeout)
+    except Exception as exc:  # noqa: BLE001 — 网络异常一律降级为「刷新失败」，不阻断启动
+        result['error'] = f'{type(exc).__name__}: {exc}'
+        return result
+
+    result['http_status'] = status
+    incoming_map = parse_cookie_string(incoming)
+    result['fetched_fields'] = sorted(incoming_map.keys())
+
+    if not incoming_map:
+        result['error'] = '入口页没有下发任何 Cookie。'
+        return result
+
+    result['ok'] = True
+
+    if not args.config:
+        return result
+
+    config_path = Path(args.config)
+    existing = load_config(config_path)
+    existing_cookie = existing.get('cookies', '') or ''
+    merged = merge_cookie_strings(existing_cookie, incoming)
+    if merged != existing_cookie:
+        save_cookie_to_config(config_path, merged, merge=False)
+        result['written'] = True
+
+    existing_fields = parse_cookie_string(existing_cookie)
+    result['merged_fields'] = sorted(parse_cookie_string(merged).keys())
+    result['preserved_fields'] = sorted(set(existing_fields) - set(incoming_map))
+    return result
+
+
+if __name__ == '__main__':
+    import sys as _sys
+
+    print(json.dumps(_refresh_cli(), ensure_ascii=False))
+    _sys.exit(0)

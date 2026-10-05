@@ -71,6 +71,20 @@ export function validateMcpServer(raw: unknown): McpValidationResult {
   }
   const label = `mcp server "${server.id}"`;
 
+  // A timeout is a budget, not a hint: a non-positive or non-integer value
+  // would either disable the guard or make it fire before the process can
+  // plausibly answer. Reject rather than coerce, so the manifest author sees
+  // the mistake at load time instead of as an unexplained call failure.
+  if (server.callTimeoutMs !== undefined) {
+    if (
+      typeof server.callTimeoutMs !== "number" ||
+      !Number.isInteger(server.callTimeoutMs) ||
+      server.callTimeoutMs <= 0
+    ) {
+      return { ok: false, error: `${label} callTimeoutMs must be a positive integer` };
+    }
+  }
+
   if (server.transport === "stdio") {
     if (server.url !== undefined || server.headers !== undefined) {
       return { ok: false, error: `${label} must not set url or headers` };

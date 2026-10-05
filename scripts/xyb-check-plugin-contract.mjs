@@ -112,6 +112,44 @@ function makePi(plugin, dir, log) {
       unregisterTool: async (name) => {
         if (typeof name !== "string") fail(plugin, "agent.unregisterTool 需要字符串 name");
       },
+      // 签名：complete({ modelKey, system?, messages?, thinkingLevel?, includeSessionContext? })
+      // 真实宿主约束（apps/desktop/electron/main/plugin-runtime.ts:4071-4155）：
+      //   modelKey 必须是 "providerId/modelId"；system ≤32KiB；messages ≤200k 字符；
+      //   需要 agent.complete 权限且每窗口最多 8 次。
+      complete: async (input) => {
+        if (!input || typeof input !== "object") {
+          fail(plugin, "agent.complete 需要一个对象参数");
+          return { text: "" };
+        }
+        if (typeof input.modelKey !== "string" || !input.modelKey.includes("/")) {
+          fail(
+            plugin,
+            `agent.complete 的 modelKey 必须是 "providerId/modelId"，收到：${String(input.modelKey)}`,
+          );
+        }
+        if (input.system !== undefined && typeof input.system !== "string") {
+          fail(plugin, "agent.complete 的 system 必须是字符串");
+        }
+        if (input.messages !== undefined) {
+          if (!Array.isArray(input.messages)) {
+            fail(plugin, "agent.complete 的 messages 必须是数组");
+          } else {
+            for (const m of input.messages) {
+              if (!m || typeof m.content !== "string" || !["user", "assistant"].includes(m.role)) {
+                fail(plugin, "agent.complete 的 messages 元素必须是 { role: user|assistant, content: string }");
+              }
+            }
+          }
+        }
+        log.completes.push(input);
+        if (!ONLINE) return { text: "" };
+        // 离线时返回空文本，让调用方的「模型返回空内容」分支被真实走到。
+        return { text: "" };
+      },
+    },
+    models: {
+      // 签名：list() -> PluginModelInfo[]
+      list: async () => [],
     },
     ui: {
       // 签名：showToast(message: string, level?: "info"|"warn"|"error")
@@ -246,7 +284,7 @@ async function run() {
 
   for (const dir of pluginDirs()) {
     const plugin = dir.split("/").pop();
-    const log = { commands: [], tools: [] };
+    const log = { commands: [], tools: [], completes: [] };
     const pi = makePi(plugin, dir, log);
 
     // 先做静态形状检查：坏调用常在异常分支或命令处理里，跑不到就发现不了

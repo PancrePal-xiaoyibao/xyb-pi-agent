@@ -200,6 +200,27 @@ sudo xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
 > 站点的验证码与反爬一律不绕过。会话过期就如实说查不到，让人工重新提供。
 > 拿不到来源时明说「这一处没查到」，不用别的来源顶上。
 
+#### 访问 WHO ICTRP 的两条通道，以及我们为什么用公开那条
+
+有两条**互相独立**的通道，不能混为一谈：
+
+| | **WHO ICTRP 检索门户**（我们在用） | **ICTRP Search Portal Web Service**（未使用） |
+|---|---|---|
+| 是什么 | 公开检索门户 `trialsearch.who.int` | WHO 官方发布的 XML Web Service，可实时检索 ICTRP 数据库 |
+| 获取方式 | 开放，纯 HTTP，无需密钥 | **不是公开即拿即用**：需作为合作/使用方申请；WHO 明确接入费用需按请求提供；无开放式 API Key 自助注册入口 |
+| 协议 | HTTP + HTML | XML Web Service（不是现代 JSON REST API，也不是 MCP） |
+| 覆盖 | 全球各注册库，含 ChiCTR、ClinicalTrials.gov、ACTRN 等 | 完整的 ICTRP 数据库；面向研究用途，也面向注册机构、政府部门、WHO 内部单位及其他研究机构 |
+| 我们的用法 | **两种**：①作为 ChiCTR 记录的检索辅助；②作为统一查询的**第 5 个来源**，经随包的 `ictrp_search` MCP 工具调用（待实现，见宿主编排 SPEC §15） | 完全不使用 |
+
+**我们刻意走公开检索门户，而不是 Web Service。** Web Service 是更正式的通道，
+长期看也是更好的路线；但它需要合作协议与按请求报价的费用，
+无法作为一个免费桌面工具的默认路径随包提供。把这件事实写进文档，
+是为了让这个选项**可见**，而不是过段时间被重新发现一遍，
+也避免有人把门户误当成官方 API。
+
+> 如果这个项目日后有了资助或合作渠道，Web Service 就是升级路径。
+> 在那之前，下面所有内容走的都是公开门户。
+
 ### 四、外部接入技能（来自 opencare-skillhub）
 
 这 4 个不是小胰宝自研，装在 `xyb.skillpack` 里。**启用插件即可用**，不需要额外配置。
@@ -248,6 +269,8 @@ sudo xattr -dr com.apple.quarantine "/Applications/小胰宝.app"
 | 上游底座 | [vastsa/PI-Desktop](https://github.com/vastsa/PI-Desktop)（LGPL-3.0） |
 | 小胰宝定制 | [PancrePal-xiaoyibao/xyb-pi-agent](https://github.com/PancrePal-xiaoyibao/xyb-pi-agent) |
 | ChiCTR MCP 服务 | [chictr-mcp-server](https://www.npmjs.com/package/chictr-mcp-server)（Apache-2.0） |
+| WHO ICTRP 检索门户 | [trialsearch.who.int](https://trialsearch.who.int/Default.aspx)——公开门户；既用于 ChiCTR 检索，也将作为第 5 个统一查询来源（`ictrp_search`，待实现） |
+| WHO ICTRP Search Portal Web Service | WHO 官方 XML Web Service，可实时检索 ICTRP；需申请合作方并按请求付费，**本项目未使用** |
 | 中国药物临床试验登记采集器 | [PancrePal-xiaoyibao/chinadrugtrials-collector](https://github.com/PancrePal-xiaoyibao/chinadrugtrials-collector) |
 | 试验匹配进阶版 | [opencare-skillhub/clinical-trial-matching](https://github.com/opencare-skillhub/clinical-trial-matching) |
 | 病案整理 | [opencare-skillhub/Medical-Record-Organizer](https://github.com/opencare-skillhub/Medical-Record-Organizer) |
@@ -325,7 +348,7 @@ Subagent 与 Worker Session 可以承担独立任务并行工作。
 > [!NOTE]
 > **PI-Desktop 目前仍处于 Early Preview。** 已可用于真实开发工作流，部分 API、插件接口与桌面能力仍在持续演进。
 
-> **当前发布线：0.16.x（Early Preview）。**
+> **当前发布线：0.17.x（Early Preview）。**
 
 ---
 

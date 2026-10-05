@@ -6,7 +6,7 @@
  *   node mcp-probe.mjs <label> <command> [args...] -- <json-rpc 请求，可多个，每行一个>
  *
  * 例：
- *   node mcp-probe.mjs chictr npx -y chictr-mcp-server@2.0.2 -- \
+ *   node mcp-probe.mjs chictr npx -y chictr-mcp-server@3.0.2 -- \
  *     '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
  *
  * 行为：启动服务 → initialize → 依次发送请求 → 打印结果 → 退出。

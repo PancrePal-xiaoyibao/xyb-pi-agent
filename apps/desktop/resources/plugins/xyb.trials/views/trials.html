@@ -53,6 +53,61 @@
         background: var(--soft); border-radius: 0 8px 8px 0; font-size: 11.5px;
         line-height: 1.7; color: var(--body);
       }
+      .coverage {
+        display: none; margin-top: 12px; padding: 10px 12px;
+        border: 1px solid var(--line); border-radius: 8px;
+        background: var(--soft); color: var(--body); font-size: 11.5px; line-height: 1.7;
+      }
+      .coverage.partial { display: block; border-color: #c58b32; }
+      .coverage.complete { display: block; border-color: var(--mint); }
+      .coverage-title { font-weight: 600; margin-bottom: 4px; }
+      .coverage-source { color: var(--muted); }
+      .coverage-sentence { margin-bottom: 6px; }
+      .coverage-sources { margin: 6px 0 0; padding: 0; list-style: none; }
+      .coverage-sources li { display: flex; gap: 6px; align-items: baseline; margin-top: 2px; }
+      .coverage-sources .name { flex: 0 0 auto; font-weight: 500; }
+      .coverage-sources .state { color: var(--muted); }
+      .coverage-sources .state.bad { color: #c58b32; }
+      .lower-bound {
+        margin-top: 8px; padding: 8px 10px; border: 1px solid #c58b32;
+        border-radius: 8px; background: #fdf6e8; color: var(--body);
+      }
+      .lower-bound .numbers { margin-top: 4px; font-variant-numeric: tabular-nums; }
+      /* 修复命令要能被一眼认出是「拿去跑的命令」，而不是又一句解释。 */
+      .fix-command {
+        display: block; margin-top: 4px; padding: 4px 6px; border-radius: 6px;
+        background: var(--soft); color: var(--ink);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; user-select: all; white-space: pre-wrap; word-break: break-all;
+      }
+      .attribution {
+        margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
+        color: var(--muted); font-size: 11px; line-height: 1.65;
+      }
+      .attribution a { color: var(--mint); }
+      /* 条款披露入口。默认收起：多数人不需要读六条义务，但需要知道它在哪。
+         用 --line/--body/--ink/--soft/--muted，都是本面板真实声明过的变量——
+         CSS 自定义属性未声明不会报错，只会静默失效。 */
+      .terms { margin-top: 6px; }
+      .terms > summary {
+        cursor: pointer; color: var(--ink); font-size: 11px;
+        list-style: none; user-select: none;
+      }
+      .terms > summary::-webkit-details-marker { display: none; }
+      .terms > summary::before { content: "▸ "; color: var(--muted); }
+      .terms[open] > summary::before { content: "▾ "; }
+      .terms-body {
+        margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line);
+        border-radius: 8px; background: var(--soft); color: var(--body);
+        font-size: 11px; line-height: 1.7;
+      }
+      .terms-quote { margin-bottom: 6px; color: var(--ink); font-style: italic; }
+      .terms-list { margin: 0 0 6px; padding-left: 18px; }
+      .terms-list li { margin-bottom: 3px; }
+      .overlap-warning {
+        margin-top: 8px; padding: 8px 10px; border: 1px solid #c58b32;
+        border-radius: 8px; background: #fdf6e8; color: var(--body);
+      }
       .list { margin-top: 16px; }
       .card {
         border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; margin-bottom: 9px;
@@ -65,6 +120,8 @@
       }
       .tag.gray { color: var(--muted); border-color: var(--line); }
       .meta { color: var(--muted); font-size: 11px; line-height: 1.7; }
+      /* 来源行比其它 meta 稍显眼：它是归属声明，不是辅助信息。 */
+      .meta.source { color: var(--ink); opacity: 0.8; }
       .link { color: var(--mint); font-size: 11.5px; text-decoration: none; }
       .link:hover { text-decoration: underline; }
       .empty {
@@ -79,12 +136,17 @@
 
     <div class="bar">
       <input type="text" id="q" placeholder="例如：胰腺癌 KRAS" />
-      <button class="btn" id="go">检索</button>
+      <button class="btn" id="go">单源检索</button>
+      <button class="btn" id="coverage-go" title="显示五个来源的状态；本面板只能直接查询 ClinicalTrials.gov">按渠道汇总</button>
     </div>
 
     <div class="disclaimer">
       以下为公开试验信息整理，供参考，不构成医疗建议。是否符合入组条件，需由研究医生结合病情判断。
     </div>
+
+    <div class="coverage" id="coverage"></div>
+
+    <div class="overlap-warning" id="overlap" style="display: none"></div>
 
     <div class="list" id="list">
       <div class="empty">还没有检索结果。输入关键词后点「检索」。</div>
@@ -133,7 +195,21 @@
         return n;
       }
 
-      function render(items, note) {
+      /**
+       * `queried` 是调用方告诉我们的「本次真的查过几处来源」。
+       *
+       * 为什么必须区分：这个面板自己只能走本插件通道，`doCoverage()` 传的是空
+       * `sourceResults`，所以每个来源都是 NOT_ENABLED、记录数是 0。此时渲染
+       * 「没有找到符合条件的公开试验」是**替数据断言了一个它没有的原因**——
+       * 零条记录的原因不是「没有匹配」，而是「一处都没问」。更糟的是这句话就
+       * 印在覆盖面板下方，而覆盖面板同一屏里正写着「本次只覆盖 0/5 处来源……
+       * 未覆盖不等于没有结果」。同一屏上两句话互相否认，用户会相信更像结论的
+       * 那句（「没有找到」），因为它读起来像一个答案。
+       *
+       * 这与 §15.26 拒绝给没派发的来源编造「整体检索时间已到」是同一条规则：
+       * 不知道原因时，就说不知道原因。
+       */
+      function render(items, note, queried) {
         const list = document.getElementById("list");
         list.textContent = "";
 
@@ -142,7 +218,21 @@
         }
 
         if (!items || !items.length) {
-          list.appendChild(el("div", "empty", "没有找到符合条件的公开试验。可以换关键词再试。"));
+          if (queried === 0) {
+            // 一处都没查。不说「没有找到」。
+            list.appendChild(
+              el(
+                "div",
+                "empty",
+                "本次没有查询任何来源，所以这里没有结果——这不是「没有找到符合条件的试验」。" +
+                  "覆盖面板列出了每一处来源的本次状态。",
+              ),
+            );
+          } else {
+            list.appendChild(
+              el("div", "empty", "没有找到符合条件的公开试验。可以换关键词再试。"),
+            );
+          }
           return;
         }
         for (const it of items) {
@@ -156,17 +246,39 @@
           if (ph) row.appendChild(el("span", "tag gray", ph));
           card.appendChild(row);
 
+          // 每条记录都必须标出来源。这不只是可读性问题：WHO ICTRP 条款 4.b(1)
+          // 明确要求「attribute the source of the data as WHO ICTRP」，来自聚合库
+          // 的记录不能与一手登记库的记录长得一模一样。合并后的清单里，同一条
+          // 试验可能来自不同渠道，来源是结果的一部分，不是装饰。
+          //
+          // 三种来源标注的优先级，对应三条不同路径：
+          //   1. `sourceLabel` —— 宿主编排器逐条打好的标签，已处理
+          //      「ChiCTR via WHO ICTRP」（§15.9 第 6 条）。扇出路径走这条。
+          //   2. `sourceLabels` —— 插件合并器（unified.js）对多来源合并记录的
+          //      标注。只走 `xyb_trials_unify` 时才有。
+          //   3. `source` —— 兜底的固定译名。
+          // 少任何一条，某条路径上的记录就会变成「来源：undefined」。
+          if (it.sourceLabel) {
+            card.appendChild(el("div", "meta source", "来源：" + it.sourceLabel));
+          } else if (it.sourceLabels && it.sourceLabels.length) {
+            const labels = it.sourceLabels.map((entry) => entry.label).filter(Boolean);
+            card.appendChild(el("div", "meta source", "来源：" + labels.join("；")));
+          } else if (it.source) {
+            card.appendChild(el("div", "meta source", "来源：" + sourceName(it.source)));
+          }
+
           if (it.locations && it.locations.length) {
             card.appendChild(el("div", "meta", "地点：" + it.locations.join("、")));
           }
           card.appendChild(el("div", "meta", "信息更新于 " + (it.fetchedAt || "—")));
 
-          if (it.url) {
+          const link = it.sourceUrl || it.url;
+          if (link) {
             const a = el("a", "link", "查看原始登记信息");
             a.href = "#";
             a.addEventListener("click", (e) => {
               e.preventDefault();
-              bridge.invoke("shell.openExternal", { url: it.url }).catch(() => {});
+              bridge.invoke("shell.openExternal", { url: link }).catch(() => {});
             });
             card.appendChild(a);
           }
@@ -174,27 +286,293 @@
         }
       }
 
+      // 失败时如实说明原因。此处曾把一切错误都显示成「请检查网络」，
+      // 导致超时、宿主重启、数据源返回异常等情况无从判断——面板不再吞掉原因。
+      function failureText(err) {
+        const code = (err && err.code) || (err && err.data && err.data.code) || "";
+        const raw = (err && (err.message || err.detail)) || "";
+        if (code === "NETWORK" || /NETWORK/i.test(raw)) {
+          return "连不上 ClinicalTrials.gov。可能是网络不通或需要代理，稍后可以重试。";
+        }
+        if (code === "RATE_LIMITED") {
+          return "ClinicalTrials.gov 暂时限制了这个 IP 的请求频率，等一两分钟再试。";
+        }
+        if (code === "UPSTREAM_ERROR") {
+          return "ClinicalTrials.gov 自己返回了错误（不是你的网络问题），稍后重试。";
+        }
+        if (code === "TIMEOUT" || /timed? ?out/i.test(raw)) {
+          return "ClinicalTrials.gov 响应超时，稍后重试通常就好。";
+        }
+        if (code === "PLUGIN_CRASHED" || /crash/i.test(raw)) {
+          return "插件进程刚刚重启过（可能被系统或手动结束）。请再点一次「检索」。";
+        }
+        if (code === "NO_SOURCE") {
+          return "插件的试验数据源被关掉了，请在插件设置里开启 ClinicalTrials.gov。";
+        }
+        if (code === "NOT_FOUND") {
+          return "面板与插件版本不一致，重启应用后再试。";
+        }
+        // 未知错误也把原始信息显示出来，便于排查；不要退回成笼统的「网络问题」。
+        const detail = raw ? "：" + String(raw).slice(0, 300) : "";
+        return "检索失败" + (code ? "（" + code + "）" : "") + detail;
+      }
+
+
+      // ---------------------------------------------------------------------
+      // 来源覆盖面板
+      //
+      // 四件事必须同时可见，缺一件用户就会把「查了 3 处」读成「一共就这么多」：
+      //   1. coverage 句：只覆盖了几处、哪几处没查
+      //   2. completeness 句：拿到的数字是什么性质（是不是下界）
+      //   3. WHO ICTRP 的双数字：实得行数 ≠ 上游自报总数，绝不合并成一个数
+      //   4. WHO 归因与处理日期（ICTRP 条款 4.b(1)/4.b(3) 的披露义务）
+      // ---------------------------------------------------------------------
+
+      const STATE_ZH = {
+        SUCCESS: "已查询",
+        NO_RESULTS: "已查询（无匹配）",
+        NOT_ENABLED: "未启用",
+        NEEDS_SETUP: "需要配置",
+        INDEX_EMPTY: "索引为空",
+        SESSION_EXPIRED: "会话过期",
+        CHALLENGE_REQUIRED: "需要人工验证",
+        TIMEOUT: "超时",
+        FAILED: "失败",
+        // 宿主编排器（trial-orchestrator.ts）用 NOT_QUERIED 表示「这一处根本没被问到」
+        // ——截止时间到、被取消、工具不存在。它与 FAILED 是两件事，而且正是
+        // 2026-10-03 那次误标的同一类错误：把「没问」说成「没有」。
+        NOT_QUERIED: "本次未查询",
+      };
+
+      const SOURCE_ZH = {
+        clinicaltrials_gov: "ClinicalTrials.gov",
+        chictr: "ChiCTR（中国临床试验注册中心）",
+        veeva_ctv: "Veeva CTV 本地索引",
+        chinadrugtrials: "中国药物临床试验登记平台（CDE）",
+        who_ictrp: "WHO ICTRP（聚合库）",
+      };
+
+      function sourceName(key) {
+        return SOURCE_ZH[key] || key;
+      }
+
+      function stateName(state) {
+        return STATE_ZH[state] || state;
+      }
+
+      function clearCoverage() {
+        const box = document.getElementById("coverage");
+        box.textContent = "";
+        box.className = "coverage";
+        document.getElementById("overlap").style.display = "none";
+      }
+
+      function renderCoverage(result) {
+        const box = document.getElementById("coverage");
+        box.textContent = "";
+        if (!result || !result.coverage) return;
+        const { coverage, completeness = {}, statuses = [] } = result;
+
+        box.className = "coverage " + (coverage.complete ? "complete" : "partial");
+        box.appendChild(el("div", "coverage-title", "本次渠道覆盖"));
+        box.appendChild(el("div", "coverage-sentence", coverage.sentence));
+
+        const list = el("ul", "coverage-sources");
+        for (const st of statuses) {
+          const li = el("li");
+          li.appendChild(el("span", "name", sourceName(st.source)));
+          const ok = st.state === "SUCCESS" || st.state === "NO_RESULTS";
+          li.appendChild(el("span", "state" + (ok ? "" : " bad"), "· " + stateName(st.state)));
+          if (st.explanation) li.appendChild(el("span", "state", "— " + st.explanation));
+          // SPEC §15.9 第 3 条：前置条件缺失时必须给出**可复制**的一行修复命令。
+          // 只说「缺少 Python」而不给命令，等于把用户留在原地：他知道坏了，
+          // 但不知道该敲什么。只有探测过运行环境的路径才有这条命令，
+          // 没有就不显示——不替用户猜。
+          if (st.fixCommand) {
+            const fix = el("code", "fix-command", st.fixCommand);
+            li.appendChild(fix);
+          }
+          list.appendChild(li);
+        }
+        box.appendChild(list);
+
+        if (completeness.sentence && completeness.countsAreLowerBounds) {
+          box.appendChild(el("div", "lower-bound", completeness.sentence));
+        }
+
+        // WHO ICTRP 的双数字。只要它这次真的查过就展示，不管整体覆盖是否完整——
+        // 用户看的是「这个来源的两个数分别是多少」，不是「整体是否齐全」。
+        const ictrp = statuses.find((st) => st.source === "who_ictrp");
+        if (ictrp && (ictrp.state === "SUCCESS" || ictrp.state === "NO_RESULTS")) {
+          const lower = el("div", "lower-bound");
+          lower.appendChild(el("div", null, "WHO ICTRP 是聚合库，它的返回集是下界："));
+          const nums = el("div", "numbers");
+          const matched = ictrp.matchedRowsReturned;
+          const upstream = ictrp.upstreamReportedTotal;
+          nums.appendChild(
+            el("div", null, "本次实际取到：" + (typeof matched === "number" ? matched + " 条" : "未报告")),
+          );
+          nums.appendChild(
+            el("div", null, "上游自报总数：" + (typeof upstream === "number" ? upstream + " 条" : "未报告")),
+          );
+          if (typeof matched === "number" && typeof upstream === "number" && upstream > matched) {
+            nums.appendChild(el("div", null, "相差 " + (upstream - matched) + " 条，未取到的部分不代表不存在。"));
+          }
+          lower.appendChild(nums);
+          box.appendChild(lower);
+        }
+
+        // WHO 归因与处理日期。条款 4.b(1) 要求标注来源、4.b(3) 要求显示 WHO
+        // 的处理日期；只要本次结果里含 ICTRP 记录就要披露。
+        if (ictrp && ictrp.state === "SUCCESS") {
+          const attr = el("div", "attribution");
+          attr.appendChild(el("div", null, "数据来源：WHO International Clinical Trials Registry Platform (ICTRP)。"));
+          if (ictrp.processedAt) {
+            attr.appendChild(el("div", null, "WHO 处理日期：" + ictrp.processedAt));
+          }
+          // 条款披露入口（可折叠）。SPEC §15.7 要求这里是一个**入口**而不是一句
+          // 归因：用户必须能读到约束这批数据的六条义务本身，以及条款里那句
+          // 「in effect as long as the user retains any of the data」——它意味着
+          // 卸载本应用**不**终止义务，用户自己留下的快照仍受约束。只看一个外链
+          // 等于把「你有没有遵守」交给用户自己去官网上找，而义务是我们的。
+          //
+          // 逐字摘录的是义务条目（4.b/4.c/4.d/4.e），不是转述——转述会丢掉
+          // 「independent of format and method of acquisition」这类关键措辞。
+          const details = document.createElement("details");
+          details.className = "terms";
+          const summary = document.createElement("summary");
+          summary.textContent = "使用条款与义务（WHO ICTRP）";
+          details.appendChild(summary);
+
+          const body = el("div", "terms-body");
+          body.appendChild(
+            el("div", "terms-quote", "“These Terms and Conditions apply to all data obtained from the WHO ICTRP, independent of format and method of acquisition.”"),
+          );
+          const list = el("ul", "terms-list");
+          for (const item of [
+            "标注数据来自 WHO ICTRP（条款 4.b(1)）——本面板在上方已标注。",
+            "显示 WHO 处理这批数据的日期（条款 4.b(3)）——本面板在上方已显示；缺失时留空，不用抓取时间顶替。",
+            "WHO 每周更新 ICTRP，不得暗示数据是实时的（条款 4.b(2)）。",
+            "不得主张对这批数据的专有权利（条款 4.c）。",
+            "不得使用 WHO 的名称或徽标，不得暗示 WHO 对本应用或结果的背书（条款 4.e）。",
+            "禁止任何营销、推广或商业用途（条款 4.d）。",
+          ]) {
+            list.appendChild(el("li", null, item));
+          }
+          body.appendChild(list);
+          body.appendChild(
+            el("div", "terms-quote", "“in effect as long as the user retains any of the data” —— 该条款在用户仍留存任何数据期间持续有效，因此**卸载本应用不终止这些义务**；用户自行保存的快照仍受约束。"),
+          );
+          body.appendChild(el("div", null, "本应用与 WHO 无隶属关系；数据按原样提供，不构成医疗建议。"));
+
+          const link = el("a", null, "查看 WHO ICTRP 使用条款原文");
+          link.href = "#";
+          link.addEventListener("click", (e) => {
+            e.preventDefault();
+            bridge
+              .invoke("shell.openExternal", {
+                url: "https://www.who.int/tools/clinical-trials-registry-platform/network/who-data-set/downloading-records-from-the-ictrp-database",
+              })
+              .catch(() => {});
+          });
+          body.appendChild(link);
+          details.appendChild(body);
+          attr.appendChild(details);
+          box.appendChild(attr);
+        }
+      }
+
+      // 手工配置的 MCP 若与内置通道指向同一数据源，两条链路的结果没有去重，
+      // 合并计数会偏高。这里如实提示，不静默——静默会让「条数是下界」变成上界。
+      function renderOverlap(overlaps, sentence) {
+        const box = document.getElementById("overlap");
+        // 文案由宿主给出（`aggregate().overlapsSentence`），面板不再自己拼一份。
+        // 两处各写一份的命运是：用户读到的那份宿主并不背书，而宿主改成别的措辞
+        // 时面板仍印旧话——与 §15.31「守卫不能抄常量」是同一条规则用在文案上。
+        const text = sentence || "";
+        if (!text) {
+          box.style.display = "none";
+          return;
+        }
+        box.textContent = "";
+        box.appendChild(el("div", null, text));
+        box.style.display = "block";
+      }
+
+      async function doCoverage() {
+        const btn = document.getElementById("coverage-go");
+        const q = document.getElementById("q").value.trim();
+        btn.disabled = true;
+        const list = document.getElementById("list");
+        try {
+          // 面板只能走本插件自己的通道：它拿不到宿主编排器的扇出结果，也无法
+          // 枚举用户手工配置的 MCP 服务器（插件 API 面没有这个能力）。因此这里
+          // 传空 sourceResults，五个来源会如实报「本次未查询」——面板宁可承认
+          // 自己没查，也不假装查完了五处。
+          //
+          // 真·五渠道扇出发生在助手回合里（plugin_xyb_trials_xyb_trials_fanout
+          // → 宿主 broker → 五个子工具）；双数字下界、WHO 条款归因与手工 MCP
+          // 重叠提示都由那条路径产出。下面的 renderOverlap 因此只在消息里带着
+          // overlaps 时才显示（面板自身不会产生它），保留它是为了同一份渲染
+          // 代码在两条路径下行为一致，而不是指望这条路会触发。
+          const res = await bridge.invoke("xyb.trials.unify", {
+            query: { keywords: q || undefined, condition: "pancreatic cancer" },
+            sourceResults: {},
+          });
+          if (res && res.ok === false) {
+            list.textContent = "";
+            list.appendChild(el("div", "empty", failureText({ code: res.code || res.reason, message: res.error })));
+            return;
+          }
+          renderCoverage(res);
+          renderOverlap(res && res.overlaps, res && res.overlapsSentence);
+          // `sourcesQueried` 是聚合器算出来的「本次真的查过几处」，直接用它，
+          // 不在面板里按状态重新数一遍——两处各算一次，迟早会算出两个数。
+          render(res && res.records, null, res && typeof res.sourcesQueried === "number" ? res.sourcesQueried : undefined);
+        } catch (e) {
+          list.textContent = "";
+          list.appendChild(el("div", "empty", failureText(e)));
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
       async function doSearch() {
         const btn = document.getElementById("go");
         const q = document.getElementById("q").value.trim();
         btn.disabled = true;
+        const list = document.getElementById("list");
+        clearCoverage();
         try {
-          const res = await bridge.invoke("xyb.trials.search", { terms: q || undefined });
+          const res = await bridge.invoke("xyb.trials.search", {
+            terms: q || undefined,
+            // 面板固定胰腺癌场景，显式传入病种；否则 main.js 会退到默认值，
+            // 而默认值一旦调整，面板与助手的行为就会不一致。
+            condition: "pancreatic cancer",
+          });
+          // 插件返回值本身也可能是失败结构（渠道不可用等），不只是抛异常。
+          if (res && res.ok === false) {
+            list.textContent = "";
+            list.appendChild(el("div", "empty", failureText({ code: res.code || res.reason, message: res.error })));
+            return;
+          }
           let note = "";
           if (res && res.dropped) {
             note = "「" + res.dropped + "」这几个词暂时无法转成检索词，结果里没有包含它们。可以试试写药物名、治疗方式或基因名。";
           }
-          render(res && res.items, note);
+          // 这是直连 CT.gov 的检索：只要调用返回了，就说明**问过一处**，
+          // 所以零条结果在这里确实意味着「这一处没有匹配」。
+          render(res && res.items, note, 1);
         } catch (e) {
-          const list = document.getElementById("list");
           list.textContent = "";
-          list.appendChild(el("div", "empty", "检索失败，请检查网络后在设置里确认数据源已开启。"));
+          list.appendChild(el("div", "empty", failureText(e)));
         } finally {
           btn.disabled = false;
         }
       }
 
       document.getElementById("go").addEventListener("click", doSearch);
+      document.getElementById("coverage-go").addEventListener("click", doCoverage);
       document.getElementById("q").addEventListener("keydown", (e) => {
         if (e.key === "Enter") doSearch();
       });

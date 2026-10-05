@@ -12,7 +12,8 @@ node scripts/xyb-check-plugin-contract.mjs            # 离线
 node scripts/xyb-check-plugin-contract.mjs --online   # 联网，真打数据源
 
 # 2. 直连 MCP 服务，看握手与工具返回
-node scripts/xyb-probe-mcp.mjs chictr npx -y chictr-mcp-server@2.0.2 -- \
+#    ChiCTR 3.0.1 起走 Python sidecar 通道，需先 npx 拉包并确认 CHICTR_USE_SIDECAR=1
+node scripts/xyb-probe-mcp.mjs chictr npx -y chictr-mcp-server@3.0.2 -- \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_trials","arguments":{"keyword":"胰腺癌","max_results":5}}}'
 
 # 3. 用「真实网络 + 真实磁盘」跑插件工具与命令（不是假 fetch）
@@ -36,7 +37,7 @@ PROBE_VAULT=/path/to/测试资料库 node scripts/xyb-probe-plugin.mjs \
 | 插件加载 | **8 / 8 通过**（启动日志 `load.success` 全绿，零 error） |
 | 技能注册 | **17 个全部注册**（assistants 9 / skillpack 4 / trial-sources 2 / trials 1 / records 1） |
 | MCP 服务 | **3 / 3 握手成功**（chictr 9 工具、veeva-ctv 12 工具、chinadrugtrials 8 工具） |
-| 临床检索 | **可用**，四个来源全部实测有响应 |
+| 临床检索 | **可用**，已实现的四个来源全部实测有响应（WHO ICTRP 是第 5 个来源，**尚未实现**，不在本次实测范围） |
 | 契约测试 | 离线 6/6、联网 6/6 通过 |
 
 **没有出现此前那类「插件启用了但工具报错」的情况。**

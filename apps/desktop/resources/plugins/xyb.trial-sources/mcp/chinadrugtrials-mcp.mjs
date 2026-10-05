@@ -39,7 +39,21 @@ const SCRAPER = path.join(COLLECTOR_DIR, "scripts", "scraper.py");
 const VERIFIER = path.join(COLLECTOR_DIR, "scripts", "verify_output.py");
 const REQUIREMENTS = path.join(COLLECTOR_DIR, "scripts", "requirements.txt");
 
-const DATA_DIR = path.join(os.homedir(), ".xyb-chinadrugtrials");
+/**
+ * 归档根目录（可配置）。
+ *
+ * 默认 ~/.xyb-chinadrugtrials，与采集器「--output 后再拼 /<关键词>/」的结构保持一致。
+ * 允许用环境变量 XYB_CHINADRUCTRIALS_DATA_DIR 指到别处：既有用户手上往往已经有一份
+ * 采集器跑出来的归档，硬编码会让 MCP 读到一个空目录并报「本机还没有归档记录」——
+ * 那种「静默读空」会被患者读成「没有相关试验」，比报错更危险。
+ */
+const DATA_DIR = (() => {
+  const override = process.env.XYB_CHINADRUCTRIALS_DATA_DIR;
+  if (typeof override === "string" && override.trim()) {
+    return path.resolve(override.trim(), "").replace(/[/\\]+$/, "");
+  }
+  return path.join(os.homedir(), ".xyb-chinadrugtrials");
+})();
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 const OUTPUT_ROOT = path.join(DATA_DIR, "output");
 const VENV_DIR = path.join(DATA_DIR, "venv");
@@ -162,6 +176,27 @@ async function checkCollectorDeps(python) {
   return { ok: false, missing: missing.length ? missing : ["requests", "beautifulsoup4"] };
 }
 
+/**
+ * 采集器脚本本身是否随包存在。
+ *
+ * 必须单独检查：`checkCollectorDeps` 只探测 venv 里的 Python 包能不能 import，
+ * 它无法发现「采集器脚本不在磁盘上」——那种情况下依赖探测照样返回 ok，
+ * 体检报告会说「一切就绪」，直到真正调用 search_trials 才以 ENOENT 失败。
+ * 把 MCP 单独发布成 npm 包、或插件目录被裁剪时就会踩到这个坑。
+ */
+async function checkCollectorFiles() {
+  const required = { scraper: SCRAPER, verifier: VERIFIER, requirements: REQUIREMENTS, cookie_tools: COOKIE_TOOLS };
+  const missing = [];
+  for (const [label, file] of Object.entries(required)) {
+    try {
+      await fsp.access(file, fs.constants.R_OK);
+    } catch {
+      missing.push(label);
+    }
+  }
+  return { ok: missing.length === 0, missing, dir: COLLECTOR_DIR };
+}
+
 // ──────────────────────────────────────────────
 // Cookie 处理
 // ──────────────────────────────────────────────
@@ -200,6 +235,70 @@ function extractCookie(input) {
 function cookieLooksLikeChallenge(cookie) {
   // 平台关键会话字段。缺了通常就是没登录/验证页的会话。
   return !/(^|;\s*)(FSSBBIl1UgzbN7N80S|token|JSESSIONID|SESSION)=/i.test(cookie);
+}
+
+const COOKIE_TOOLS = path.join(COLLECTOR_DIR, "scripts", "cookie_tools.py");
+
+/**
+ * 让站点重新下发反爬 Cookie 并合并进本机 config.json。
+ *
+ * 只调用采集器自带的 cookie_tools.py（已测过的合并逻辑），不在这里重写解析：
+ * 合并策略是「站点下发的同名字段覆盖」，浏览器登录态字段一律保留，
+ * 因此不会把用户本人的会话清掉，也不生成、不猜测任何凭据。
+ *
+ * 失败一律降级为结果对象，不抛异常——刷新失败不该让 MCP 起不来；
+ * 真正过期时由 runScrape 的挑战页分支给出可执行提示。
+ */
+async function refreshBootstrapCookie({ python } = {}) {
+  const interpreter = python ?? (await resolvePython());
+  if (!interpreter) return { ok: false, error: "本机没有可用的 python3。" };
+  try {
+    await fsp.access(COOKIE_TOOLS, fs.constants.R_OK);
+  } catch {
+    return { ok: false, error: "采集器里没有 cookie_tools.py，无法刷新。" };
+  }
+
+  const result = await run(
+    interpreter.command,
+    [COOKIE_TOOLS, "--config", CONFIG_PATH],
+    { timeoutMs: 60000 },
+  );
+  const line = `${result.stdout}`
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((s) => s.startsWith("{"))
+    .pop();
+  if (!line) {
+    return {
+      ok: false,
+      error: "刷新没有返回可解析结果。",
+      log_tail: `${result.stdout}${result.stderr}`.trim().slice(-400),
+    };
+  }
+  try {
+    const parsed = JSON.parse(line);
+    // 只回传字段名与掩码状态，绝不回传 Cookie 值。
+    delete parsed.cookies;
+    parsed.fields = parsed.merged_fields?.length ? parsed.merged_fields : parsed.fetched_fields ?? [];
+    delete parsed.merged_fields;
+    return parsed;
+  } catch (err) {
+    return { ok: false, error: `刷新结果解析失败：${err.message}` };
+  }
+}
+
+/**
+ * 启动时的静默刷新：只在已经配置过会话时才动 config.json。
+ *
+ * 没配置过就不该凭空写出一份「看起来已配置」的会话文件，否则 readiness 会失真。
+ */
+async function maybeRefreshCookieOnStart() {
+  const config = await readConfig();
+  const configured = typeof config.cookies === "string" && config.cookies.trim().length > 0;
+  if (!configured) return { skipped: true, reason: "尚未配置会话，启动时不刷新。" };
+  const result = await refreshBootstrapCookie();
+  log(`startup cookie refresh: ${result.ok ? "ok" : "failed"} fields=${(result.fields ?? []).join(",")}`);
+  return result;
 }
 
 // ──────────────────────────────────────────────
@@ -246,6 +345,74 @@ async function findArchiveJson(regNo, keywordDir) {
   return null;
 }
 
+/**
+ * 从 full_text 里恢复「各参加机构信息」表。
+ *
+ * 为什么不能直接用 sections['2、各参加机构信息']：采集器的 _extract_table_kv
+ * 对「列数为偶数」的行会按 (cells[0],cells[1])、(cells[2],cells[3])… 机械配对，
+ * 这张表是 6 列（序号|机构名称|主要研究者|国家或地区|省（州）|城市），于是整表错位一格：
+ * 表头变成 {'序号':'机构名称','主要研究者':'国家或地区','省（州）':'城市'}，
+ * 数据行变成 {'1':'复旦大学附属肿瘤医院','虞先濬':'中国','上海市':'上海市'}……
+ * 更糟的是字典键会互相覆盖（多个机构同省），38 家的省市只剩 19 个 —— 数据在 JSON 里已丢失。
+ *
+ * full_text 是单元格逐个按序拼接的纯文本，**没有去重也没有错位**，因此可以无损还原。
+ * 这里按「表头 6 个已知列名」定位起点，再按 6 个一格切分。
+ */
+const INSTITUTION_HEADER = ["序号", "机构名称", "主要研究者", "国家或地区", "省（州）", "城市"];
+const INSTITUTION_SECTION_LABEL = "各参加机构信息";
+const INSTITUTION_STOP_LABELS = ["五、伦理委员会信息", "伦理委员会信息", "六、试验状态信息"];
+
+function parseInstitutions(fullText) {
+  const text = typeof fullText === "string" ? fullText : "";
+  if (!text) return [];
+
+  // 以「各参加机构信息」为锚点，避免命中其它含相同列名的表。
+  const anchor = text.indexOf(INSTITUTION_SECTION_LABEL);
+  const from = anchor >= 0 ? anchor : 0;
+
+  // 表头出现的位置（按 6 个列名连续出现判定）。
+  const headerIndex = text.indexOf(INSTITUTION_HEADER.join("\n"), from);
+  let cells = null;
+  if (headerIndex >= 0) {
+    cells = text.slice(headerIndex + INSTITUTION_HEADER.join("\n").length).split("\n");
+  } else {
+    // 换行不规范时退回逐行匹配列名。
+    const lines = text.slice(from).split("\n");
+    const start = lines.findIndex((line) => INSTITUTION_HEADER.every((h) => text.includes(h)));
+    if (start < 0) return [];
+    const headerPos = lines.indexOf(INSTITUTION_HEADER[0], start);
+    cells = lines.slice(headerPos + INSTITUTION_HEADER.length);
+  }
+
+  // 表头之后紧跟换行，split 会先产生一个空串，必须丢掉，否则第一格不是序号。
+  const rows = [];
+  const trimmedCells = (cells ?? []).map((s) => s.trim());
+  const firstSeq = trimmedCells.findIndex((s) => /^\d+$/.test(s));
+  if (firstSeq < 0) return [];
+  for (
+    let i = firstSeq;
+    i + INSTITUTION_HEADER.length <= trimmedCells.length;
+    i += INSTITUTION_HEADER.length
+  ) {
+    const chunk = trimmedCells.slice(i, i + INSTITUTION_HEADER.length);
+    const [seq, name, researcher, country, province, city] = chunk;
+    // 序号必须是纯数字，否则说明已经走出这张表了。
+    if (!/^\d+$/.test(seq)) break;
+    // 遇到下一章节标题就停（原文里紧跟在表尾）。
+    if (INSTITUTION_STOP_LABELS.some((label) => chunk.some((c) => c.includes(label)))) break;
+    if (!name) break;
+    rows.push({
+      seq: Number(seq),
+      机构名称: name,
+      主要研究者: researcher ?? "",
+      国家或地区: country ?? "",
+      省: province ?? "",
+      城市: city ?? "",
+    });
+  }
+  return rows;
+}
+
 /** 把详情 JSON 压成给助手看的形状：字段名保持原样，长文本截断。 */
 function summarizeDetail(data, { includeText = false } = {}) {
   const list = data.list_info ?? {};
@@ -259,16 +426,42 @@ function summarizeDetail(data, { includeText = false } = {}) {
       }
     }
   }
+
+  // 缺陷 1：details/各章节里的「申请人名称」可能是占位符（实测为 '1'）。
+  // 真值在 sections['基本信息']['申请人名称']，占位符不能当成机构名返回给患者。
+  const applicantCandidates = [
+    sections["基本信息"]?.["申请人名称"],
+    sections["二、申请人信息"]?.["申请人名称"],
+    data.details?.["申请人名称"],
+  ]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v && !/^\d+$/.test(v) && v !== "1");
+  const applicantName = applicantCandidates[0] ?? "";
+  if (applicantName) flat["申请人名称"] = applicantName;
+  else delete flat["申请人名称"];
+
+  // 缺陷 2：机构表错位。优先用从 full_text 无损还原的结果；
+  // 还原不出来就如实说明，绝不用错位数据糊弄。
+  const institutions = parseInstitutions(data.full_text);
+  const institutionNote = institutions.length
+    ? `已从 full_text 还原 ${institutions.length} 家机构（结构化 sections 中的该表键值错位，未采用）。`
+    : "未能从归档文本中还原参加机构表；结构化 sections 中的该表存在列错位，不可直接使用。";
+
   const out = {
     reg_no: data.reg_no ?? "",
     title: list.title ?? "",
     state: list.state ?? "",
     drug_name: list.drug_name ?? "",
     indication: list.indication ?? "",
+    applicant_name: applicantName,
+    scraped_applicant_name: data.details?.["申请人名称"] ?? "",
     scrape_time: data.scrape_time ?? "",
     detail_url: data.source?.detail_url ?? "",
     raw_html_path: data.source?.raw_html_path ?? "",
     section_names: sectionNames,
+    institution_count: institutions.length,
+    institution_note: institutionNote,
+    institutions,
     fields: flat,
   };
   if (includeText) out.full_text = data.full_text ?? "";
@@ -322,7 +515,9 @@ function safeKeywordDir(keywords) {
 
 async function toolGetCollectorStatus() {
   const python = await resolvePython();
-  const deps = await checkCollectorDeps(python);
+  const files = await checkCollectorFiles();
+  // 采集器脚本缺失时不必再探依赖：装了包也没东西可跑，报「依赖 ok」只会误导。
+  const deps = files.ok ? await checkCollectorDeps(python) : { ok: false, missing: [], skipped: "采集器脚本缺失，未探测依赖" };
   const config = await readConfig();
   const configured = typeof config.cookies === "string" && config.cookies.trim().length > 0;
 
@@ -340,11 +535,18 @@ async function toolGetCollectorStatus() {
   }
 
   const nextSteps = [];
+  if (!files.ok) {
+    nextSteps.push(
+      `采集器脚本缺失（${files.missing.join("、")}），路径 ${files.dir}。` +
+        "这个 MCP 需要同目录下的 collectors/chinadrugtrials/scripts/ 才能抓取；" +
+        "只读已归档数据不受影响，但要联网同步必须先补齐采集器（重新安装插件或把插件目录完整取回）。",
+    );
+  }
   if (!python) {
     nextSteps.push(
       "本机没有可用的 python3。macOS 可执行 xcode-select --install 安装命令行工具；也可以从 python.org 安装后重试。",
     );
-  } else if (!deps.ok) {
+  } else if (files.ok && !deps.ok) {
     nextSteps.push("采集器依赖未装齐，调用 setup_environment 一次性安装（需要联网）。");
   }
   if (!configured) {
@@ -353,22 +555,66 @@ async function toolGetCollectorStatus() {
     );
   }
 
+  // 方案 C：归档为空时给出一次可执行的首次同步计划，但不自动抓取——抓取有归档副作用、
+  // 有被站点判挑战页的风险，必须由人决定。
+  //
+  // 触发条件刻意放宽：只要求「归档为空 + 采集器在 + python 在」，**不要求已配置会话**。
+  // 全新部署时恰恰还没有 cookie，若把 cookie 当门槛，最需要引导的新用户反而看不到提示。
+  // 会话未配置时用 blockers 如实说明「先配会话」，而不是干脆不给计划。
+  let bootstrapPlan = null;
+  const canScrape = Boolean(python && files.ok);
+  if (canScrape && archive.length === 0) {
+    const defaultKeywords = ["胰腺癌", "实体瘤"];
+    const blockers = [];
+    if (!configured) blockers.push("尚未配置会话（cookies）");
+    if (!deps.ok) blockers.push(`采集器依赖未装齐（缺少 ${deps.missing.join("、") || "未知"}）`);
+    bootstrapPlan = {
+      reason: "本机还没有任何归档，所以现在查询只会返回「没有归档」而不是试验结果。",
+      ready_to_run: blockers.length === 0,
+      blockers,
+      suggested_call: {
+        tool: "search_trials",
+        arguments: { keywords: defaultKeywords.join(","), max_pages: 2, incremental: true },
+      },
+      keywords: defaultKeywords,
+      estimated_note:
+        "每个关键词独立翻页，站点限速约 1.5 秒/条；两个关键词、每词 2 页（约 20 条）通常几分钟内完成。",
+      after: "同步完成后用 list_archived 看归档条目，再用 get_trial_detail 取单条详情。",
+      important:
+        "不会自动执行。抓取会在本机落盘原始 HTML/JSON/Word，请确认后再调用；换更宽或更窄的关键词由你决定。",
+    };
+    const lead = blockers.length
+      ? `本机还没有归档，且还不能抓取（${blockers.join("；")}）。`
+      : "本机还没有归档。";
+    nextSteps.push(
+      `${lead}补齐后调用 search_trials（keywords: ${defaultKeywords.join(",")}）做一次首次同步，否则任何查询都只会是「归档为空」。`,
+    );
+  }
+
+  // ready 只表示「能立刻抓取」，语义收紧到与 bootstrap_plan.ready_to_run 一致，
+  // 避免「ready: true 但一调 search_trials 就报错」这种自相矛盾的状态。
+  const ready = Boolean(python && files.ok && deps.ok && configured);
+
   return {
     ok: true,
-    ready: Boolean(python && deps.ok && configured),
+    ready,
     python: python
       ? { available: true, command: python.command, version: python.version, from_venv: python.fromVenv }
       : { available: false },
+    collector_files: files,
     collector_deps: deps,
     cookie: {
       configured,
       updated_at: config.cookie_updated_at ?? null,
       note: configured
-        ? "已配置。会话过期后需要重新从浏览器复制 cURL 更新，工具无法代替你登录。"
+        ? "已配置。启动时会自动刷新站点下发的反爬字段；登录态本身过期后仍需你本人重新从浏览器复制 cURL，工具无法代替你登录。"
         : "未配置。",
     },
     data_dir: DATA_DIR,
     archive,
+    bootstrap_plan: bootstrapPlan,
+    // 只读可用性与抓取可用性分开说：归档非空时即便不能抓，查询/详情仍完全可用。
+    quote_read_available: archive.length > 0,
     next_steps: nextSteps,
     disclaimer: DISCLAIMER,
   };
@@ -573,14 +819,151 @@ async function runScrape({ keywords, args, incremental, maxPages }) {
   };
 }
 
+/**
+ * 把用户输入拆成关键词列表。
+ *
+ * 采集器一次只处理一个关键词，并且**用关键词拼目录名**（scraper.py 的 safe_kw），
+ * 所以整串当参数传下去只会得到一个 `胰腺癌_实体瘤` 目录，而不是两份归档。
+ * 这里必须逐个关键词分别调用采集器，才能得到「胰腺癌」「实体瘤」两个独立归档。
+ */
+function parseKeywords(input) {
+  const parts = Array.isArray(input) ? input : String(input ?? "").split(/[,，、;；\s]+/);
+  const out = [];
+  for (const part of parts) {
+    const value = String(part ?? "").trim();
+    if (value && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+const MAX_KEYWORDS = 8;
+
+/**
+ * Return a local archive before trying the network.
+ *
+ * `search_trials` is the fan-out entry point, so a bundled archive that is only
+ * visible to `list_archived` is not a cold-start fallback at all.  Local rows
+ * are already the result of an earlier scrape; reading them neither needs a
+ * browser cookie nor may trigger a new crawl.  `sync_incremental` remains the
+ * explicit refresh path for a user who wants newer data.
+ */
+async function readLocalSearch(keyword, maxPages) {
+  const keywordDir = safeKeywordDir(keyword);
+  if (!fs.existsSync(keywordDir)) return null;
+  const limit = Math.max(1, Math.trunc(Number(maxPages) || 2)) * 10;
+  const { total, trials } = await readTrialsFromDir(keywordDir, limit);
+  if (total === 0) return null;
+  return {
+    ok: true,
+    keywords: keyword,
+    total_records: total,
+    archived_records: total,
+    trials,
+    archive_dir: keywordDir,
+    local_archive: true,
+    truncated: trials.length < total,
+    ...(trials.length < total
+      ? {
+          truncation_note:
+            `本地归档共 ${total} 条，本次按 max_pages 返回 ${trials.length} 条；` +
+            `还有 ${total - trials.length} 条未显示。不要据此判断没有相关试验。`,
+        }
+      : {}),
+    notice: `已从本机归档返回 ${trials.length}/${total} 条；未联网抓取。`,
+    disclaimer: DISCLAIMER,
+  };
+}
+
+async function searchOneKeyword({ keyword, args, incremental, maxPages }) {
+  // An explicit incremental sync means the caller deliberately asked to refresh;
+  // otherwise local data is authoritative for this query attempt.
+  if (!incremental) {
+    const local = await readLocalSearch(keyword, maxPages);
+    if (local) return local;
+  }
+  return runScrape({ keywords: keyword, args, incremental, maxPages });
+}
+
 async function toolSearchTrials(args) {
-  const keywords = String(args?.keywords ?? "").trim() || "胰腺癌";
-  return runScrape({
+  const keywords = parseKeywords(args?.keywords);
+  if (!keywords.length) keywords.push("胰腺癌");
+  if (keywords.length > MAX_KEYWORDS) {
+    return {
+      ok: false,
+      error: `一次最多同步 ${MAX_KEYWORDS} 个关键词，收到 ${keywords.length} 个。请分批调用。`,
+      keywords,
+    };
+  }
+
+  const incremental = Boolean(args?.incremental);
+  const maxPages = args?.max_pages ?? 2;
+
+  // Single-keyword output must expose `trials` at top level: it is the shape
+  // the host fan-out extracts into records.
+  if (keywords.length === 1) {
+    return searchOneKeyword({ keyword: keywords[0], args, incremental, maxPages });
+  }
+
+  const results = [];
+  for (const keyword of keywords) {
+    // Process one key at a time: remote calls are rate limited, while local
+    // archive reads remain cheap and deterministic.
+    const result = await searchOneKeyword({ keyword, args, incremental, maxPages });
+    results.push({
+      keywords: keyword,
+      ok: Boolean(result.ok),
+      total_records: result.total_records ?? 0,
+      archived_records: result.archived_records ?? 0,
+      archive_dir: result.archive_dir ?? "",
+      local_archive: Boolean(result.local_archive),
+      error: result.ok ? undefined : result.error,
+      hint: result.ok ? undefined : result.hint,
+    });
+  }
+
+  const succeeded = results.filter((r) => r.ok);
+  const failed = results.filter((r) => !r.ok);
+  return {
+    ok: failed.length === 0,
+    multi: true,
     keywords,
-    args,
-    incremental: Boolean(args?.incremental),
-    maxPages: args?.max_pages ?? 2,
-  });
+    succeeded: succeeded.length,
+    failed: failed.length,
+    total_records: results.reduce((sum, r) => sum + r.total_records, 0),
+    archived_records: results.reduce((sum, r) => sum + r.archived_records, 0),
+    results,
+    notice:
+      failed.length === 0
+        ? `已逐个关键词返回本地归档或完成同步（共 ${succeeded.length} 个）。`
+        : `${succeeded.length} 个关键词成功、${failed.length} 个失败。失败的关键词本次没有归档，这${"不等于"}其中没有相关试验——请按各条 hint 处理后重试。`,
+    disclaimer: DISCLAIMER,
+  };
+}
+
+async function toolRefreshCookie() {
+  const config = await readConfig();
+  const configured = typeof config.cookies === "string" && config.cookies.trim().length > 0;
+  if (!configured) {
+    return {
+      ok: false,
+      error:
+        "还没有配置会话，刷新无从下手。请先在浏览器正常访问平台，对站内请求「复制为 cURL」，用 update_cookie 存一次；之后再靠刷新维持。",
+    };
+  }
+  const python = await resolvePython();
+  const result = await refreshBootstrapCookie({ python });
+  return {
+    ok: Boolean(result.ok),
+    fields: result.fields ?? [],
+    preserved_fields: result.preserved_fields ?? [],
+    written: Boolean(result.written),
+    fetched_at: new Date().toISOString(),
+    message: result.ok
+      ? "已刷新站点下发的反爬字段，本人登录态字段保持不变。若检索仍返回空或跳验证页，说明登录态本身已过期，需要本人重新复制 cURL。"
+      : "刷新失败。这不影响已保存的会话，也不代表没有相关试验。",
+    error: result.error,
+    disclaimer: DISCLAIMER,
+  };
 }
 
 async function toolSyncIncremental() {
@@ -625,16 +1008,56 @@ async function toolListArchived(args) {
   const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.trunc(args.limit)) : 50;
   const dirs = keyword ? [safeKeywordDir(keyword)] : await listArchiveDirs();
   const result = [];
+  const missingDirs = [];
   let total = 0;
+  let returned = 0;
   for (const dir of dirs) {
     const { total: count, trials } = await readTrialsFromDir(dir, limit);
+    // 「目录不存在」与「目录存在但 0 条」必须分开：前者说明关键词拼不出本机任何一个
+    // 归档目录（如手抄了别的工具的目录名），后者才是真的空归档。混为一谈会让调用方
+    // 把「路径根本不对」误读成「这个关键词确实没有试验」。
+    if (keyword && count === 0 && !fs.existsSync(dir)) missingDirs.push(dir);
     total += count;
+    returned += trials.length;
     result.push({ keyword: path.basename(dir), records: count, trials });
   }
   if (!result.length) {
     return { ok: false, error: "本机还没有归档记录。请先调用 search_trials。" };
   }
-  return { ok: true, total_records: total, archives: result, disclaimer: DISCLAIMER };
+  const base = {
+    ok: true,
+    total_records: total,
+    returned_records: returned,
+    archives: result,
+    disclaimer: DISCLAIMER,
+  };
+  if (missingDirs.length) {
+    return {
+      ...base,
+      matched_archive: false,
+      warning:
+        `没有名为「${path.basename(missingDirs[0])}」的归档目录，所以这里返回的 0 条**不是**` +
+        `「该关键词没有试验」。先用不带 keywords 的调用看本机实际有哪些归档目录，` +
+        `再按目录名（而非你记忆中的关键词）过滤。`,
+    };
+  }
+  // 截断必须说出来。此前只回 records/trials 两个数，调用方无法区分「总共就 50 条」
+  // 与「139 条里只给了前 50 条」——实测 IBI343 的 CTR20252528 排在第 114 位，
+  // 默认 limit=50 时患者按药名翻归档会得到「没有」这个错误结论。
+  const truncated = returned < total;
+  return {
+    ...base,
+    truncated,
+    ...(truncated
+      ? {
+          truncation_note:
+            `每个关键词只返回前 ${limit} 条，本次共 ${total} 条、已返回 ${returned} 条，` +
+            `**还有 ${total - returned} 条没有显示**。不要据此判断「没有相关试验」；` +
+            `请提高 limit（如 limit: ${total}）重取，或用 keywords 缩小到具体关键词。`,
+          suggested_limit: total,
+        }
+      : {}),
+  };
 }
 
 async function toolVerifyArchive(args) {
@@ -662,7 +1085,8 @@ async function toolVerifyArchive(args) {
 const TOOLS = [
   {
     name: "get_collector_status",
-    description: `看这个来源现在能不能用：Python 环境、采集器依赖、会话是否已配置、本机归档了多少条。排障时先调它，不要靠猜。${DISCLAIMER}`,
+    description: `看这个来源现在能不能用：Python 环境、采集器脚本与依赖是否齐全、会话是否已配置、本机归档了多少条。排障时先调它，不要靠猜。
+字段含义：ready 表示「现在就能抓取」；quote_read_available 表示「已归档数据可读」（两者独立——归档非空时即使不能抓，查询与详情仍完全可用）；collector_files 是采集器脚本是否随包存在；bootstrap_plan 在归档为空时给出首次同步计划及其 blockers（不会自动执行）。${DISCLAIMER}`,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -693,7 +1117,11 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        keywords: { type: "string", description: "关键词，例如「胰腺癌」「KRAS」。默认「胰腺癌」。" },
+        keywords: {
+          type: "string",
+          description:
+            "关键词，例如「胰腺癌」「KRAS」。多个关键词用逗号分隔（如「胰腺癌,实体瘤」），会逐个关键词分别抓取并各自归档到一个目录。默认「胰腺癌」。",
+        },
         state: { type: "string", description: "试验状态，例如「招募中」「已完成」。" },
         indication: { type: "string", description: "适应症。" },
         reg_no: { type: "string", description: "登记号。" },
@@ -717,13 +1145,25 @@ const TOOLS = [
     },
   },
   {
+    name: "refresh_cookie",
+    description: `刷新平台下发的反爬 Cookie（FSSBBIl 系）并合并进本机会话文件。只更新站点自己下发的字段，本人登录态字段一律保留，不生成、不猜测任何凭据，也不会绕过站点验证。会话彻底过期（被重定向到登录/验证页）时这个工具救不回来，仍需本人重新「复制为 cURL」再调 update_cookie。`,
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: "sync_incremental",
     description: `按上次 search_trials 用的条件做一次增量同步：逐条比对正文指纹，只保存新增或内容有变化的记录。每日巡检用这个，不要每次全量重抓。${PACING_NOTE}`,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "get_trial_detail",
-    description: `从本机归档里按登记号取一条试验的完整详情（含各章节字段）。归档里没有就明确说没有，不会去联网现抓——需要现抓请先调 search_trials。${DISCLAIMER}`,
+    description: `从本机归档里按登记号取一条试验的完整详情（含各章节字段）。归档里没有就明确说没有，不会去联网现抓——需要现抓请先调 search_trials。
+返回里 applicant_name 是申请人（申办方）名称，已避开采集时可能写入的占位符；scraped_applicant_name 是归档原值，仅供排查。
+institutions 是参加机构列表（序号/机构名称/主要研究者/国家或地区/省/城市），已从归档正文按列还原——结构化 sections 里那张表的键值存在列错位，不要直接引用 sections 中的该表。
+注意：「主要研究者信息」里的电话/邮箱属于研究者本人，不是申办方联系人，引用时不要混为一谈。${DISCLAIMER}`,
     inputSchema: {
       type: "object",
       properties: {
@@ -737,12 +1177,15 @@ const TOOLS = [
   },
   {
     name: "list_archived",
-    description: "列出本机已归档的试验记录（登记号、题目、状态、药物、适应症）。查本机有什么，不联网。",
+    description:
+      "列出本机已归档的试验记录（登记号、题目、状态、药物、适应症）。查本机有什么，不联网。" +
+      "注意：每个关键词默认只返回前 50 条；被截断时结果含 truncated=true、truncation_note 与 suggested_limit，" +
+      "**不得**把「没有显示」当作「没有相关试验」——务必按 suggested_limit 重取，或用 keywords 缩小到具体关键词。",
     inputSchema: {
       type: "object",
       properties: {
         keywords: { type: "string", description: "只看某个检索关键词下的归档。" },
-        limit: { type: "integer", description: "每个关键词最多返回多少条，默认 50。" },
+        limit: { type: "integer", description: "每个关键词最多返回多少条，默认 50。结果会如实标注是否被截断。" },
       },
       additionalProperties: false,
     },
@@ -765,6 +1208,7 @@ const HANDLERS = {
   get_collector_status: toolGetCollectorStatus,
   setup_environment: toolSetupEnvironment,
   update_cookie: toolUpdateCookie,
+  refresh_cookie: toolRefreshCookie,
   search_trials: toolSearchTrials,
   sync_incremental: toolSyncIncremental,
   get_trial_detail: toolGetTrialDetail,
@@ -911,10 +1355,53 @@ function startTransport() {
 async function main() {
   await ensureDirs();
   log(`started; plugin=${PLUGIN_DIR}; data=${DATA_DIR}`);
+  // 先开会话再刷新：刷新可能耗时数秒，不能让它挡住 JSON-RPC 通道的可用性。
   startTransport();
+  maybeRefreshCookieOnStart().catch((error) => log(`startup refresh error: ${error?.message ?? error}`));
 }
 
-main().catch((error) => {
-  log(`fatal: ${error?.stack ?? error}`);
-  process.exit(1);
-});
+/**
+ * 纯函数出口，供回归测试直接调用（不含网络、磁盘与传输层副作用）。
+ * 生产路径不读这个对象。
+ */
+export const _internals = {
+  parseInstitutions,
+  summarizeDetail,
+  parseKeywords,
+  readLocalSearch,
+  searchOneKeyword,
+  INSTITUTION_HEADER,
+};
+
+// 只有作为 MCP 服务器直接运行时才启动传输层。被测试 import 时不启动，
+// 否则一次 import 就会挂住 stdin 事件循环。
+//
+// 注意必须比较 realpath：macOS 的 /tmp 是 /private/tmp 的软链接，npm link、
+// 符号链接安装、或经 /tmp 中转启动时，argv[1] 与 import.meta.url 只在字面上
+// 不同（/tmp/x vs /private/tmp/x）。只比字面量会判定 isDirectRun=false，
+// 结果是**进程静默退出、exit 0、没有任何报错**——宿主只看到 MCP 起不来。
+const isDirectRun = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const samePath = (a, b) => {
+    try {
+      return fs.realpathSync(a) === fs.realpathSync(b);
+    } catch {
+      return false;
+    }
+  };
+  try {
+    const entryPath = path.resolve(entry);
+    if (import.meta.url === new URL(`file://${entryPath}`).href) return true;
+    return samePath(entryPath, fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
+  main().catch((error) => {
+    log(`fatal: ${error?.stack ?? error}`);
+    process.exit(1);
+  });
+}

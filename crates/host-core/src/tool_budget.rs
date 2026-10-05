@@ -10,8 +10,17 @@ pub const MAX_IN_FLIGHT_SHELL: usize = 4;
 pub const MAX_IN_FLIGHT_READS: usize = 8;
 pub const MAX_IN_FLIGHT_MUTATIONS: usize = 2;
 pub const MAX_IN_FLIGHT_MUTATIONS_PER_SESSION: usize = 1;
-pub const MAX_IN_FLIGHT_PLUGINS: usize = 4;
-pub const MAX_IN_FLIGHT_PER_SESSION: usize = 4;
+/// Plugin-class capacity. Sized for the trial-source orchestrator: one
+/// `plugin_*` composite call fans out to five sibling `plugin_*`/`mcp_*` calls
+/// in the same session, and the composite holds its own permit for the whole
+/// fan-out. Five siblings + one parent is six, so anything below six turns the
+/// sixth concurrent source into a 30s queue wait that fails as
+/// `HOST_OVERLOADED` -- a reason that hides the real per-source timeout.
+pub const MAX_IN_FLIGHT_PLUGINS: usize = 6;
+/// Per-session capacity, raised alongside `MAX_IN_FLIGHT_PLUGINS` for the same
+/// fan-out: the parent composite call plus its five children all belong to one
+/// session.
+pub const MAX_IN_FLIGHT_PER_SESSION: usize = 6;
 pub const MAX_QUEUED_TOOLS: usize = 64;
 /// How long a call waits for its class permit before admission fails. A call
 /// waits here after the permission gate and before it runs, so the transport
@@ -304,6 +313,45 @@ mod tests {
         let waiter = tokio::spawn(async move { waiting_budget.acquire("session-a", "Read").await });
         drop(first);
         assert!(waiter.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn admits_a_parent_plugin_call_and_its_five_fanout_children() {
+        // The trial-source orchestrator is itself a plugin tool, and it fans
+        // out to five sibling plugin/mcp calls in the same session. Every one
+        // of those must be admitted without waiting: a queued sibling would
+        // surface as HOST_OVERLOADED rather than its own source timeout, which
+        // is exactly the misattribution the spec forbids.
+        let budget = ToolBudget::new();
+        let parent = budget
+            .acquire("session-orchestrator", "plugin_xyb.trials_unify")
+            .await
+            .unwrap();
+
+        let mut children = Vec::new();
+        for name in [
+            "plugin_clinicaltrials_gov_search",
+            "plugin_chictr_search_trials",
+            "plugin_veeva_ctv_search_studies",
+            "plugin_chinadrugtrials_search",
+            "plugin_who_ictrp_ictrp_search",
+        ] {
+            children.push(
+                budget
+                    .acquire("session-orchestrator", name)
+                    .await
+                    .expect("every fan-out child is admitted alongside its parent"),
+            );
+        }
+
+        let snapshot = budget.snapshot();
+        assert_eq!(snapshot.plugins, 6);
+        assert_eq!(snapshot.queued, 0);
+        assert_eq!(snapshot.active, 6);
+
+        drop(children);
+        drop(parent);
+        assert_eq!(budget.snapshot().active, 0);
     }
 
     #[tokio::test]

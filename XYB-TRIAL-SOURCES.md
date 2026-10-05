@@ -4,15 +4,23 @@
 
 状态：已实现并通过官方校验（5/5）。本轮实测均在本机真实执行，命令与结论可复现。
 
+> **WHO ICTRP（第 4 处来源，规划中）：** 2026-10-04 用户确定把 `ictrp-mcp-service` 作为统一查询的第 5 个来源接入本插件。
+> 形态与既有三处**不同**：源码随包 vendoring（`mcp/ictrp/`），由 `python3 -m ictrp_mcp.server` 启动，依赖
+> `mcp` / `httpx` / `pydantic`，**不经过 npm 或 PyPI**。它是本插件唯一的非 Node 依赖，也是第一个需要四级运行时
+> 探测的来源（可执行文件 → 随包模块 → 第三方依赖 → MCP 握手）。完整规格见
+> `docs/spec/xyb-unified-trial-host-orchestration.md` §15；本节只记录它与既有来源的形态差异。
+> **尚未实现。**
+
 ---
 
-## 一、三处来源的能力边界（实测）
+## 一、四处来源的能力边界（实测）
 
 | 项目 | 形态 | 出网 | 凭据 | 许可证 |
 |---|---|---|---|---|
-| `chictr_trials` | npm MCP 服务 `chictr-mcp-server@2.0.2` | 仅 `www.chictr.org.cn` | 无 | **Apache-2.0**（README 徽章误标 MIT） |
+| `chictr_trials` | npm MCP 服务 `chictr-mcp-server@3.0.2`（`CHICTR_USE_SIDECAR=1`） | 仅 `www.chictr.org.cn` | 无（sidecar 自解挑战，不需人工） | **Apache-2.0**（README 徽章误标 MIT） |
 | `ctv-mcp-server` | 本地 MCP 服务，未发布 npm | `ctv.veeva.com`（GraphQL 公开，无鉴权） | 无 | MIT |
 | `chinadrugtrials` | 本插件自带采集器 + MCP 服务 | `chinadrugtrials.org.cn` | **需患者本人浏览器会话** | 源仓库无 LICENSE 文件（见第七节） |
+| `ictrp`（**规划中**） | 随包 vendoring 的 Python MCP 服务（`mcp/ictrp/`） | `trialsearch.who.int` | 无 | 代码 **MIT**；**数据受 WHO 条款约束**（不得商业/推广用途，须标注 WHO 与处理日期） |
 | `clinicaltrials推送和订阅` | 运维/推送系统（Skill） | 多 | **12+ 组密钥**（TG / 微信 / 飞书 / FastGPT / LLM） | MIT |
 
 **关键判断**：
@@ -23,6 +31,10 @@
 - `clinicaltrials推送和订阅` **仍不接入**。它是**运营侧情报系统**（TG/GeWe/飞书推送 + FastGPT 同步），
   不是患者查询来源。它带 12+ 组生产密钥，进客户端只会扩大凭据面。
   它对应的患者侧能力（“有更新提醒我”）由 Veeva CTV 的 `create_watchlist` / `run_watchlist` 承担。
+- `ictrp` **规划中，尚未接入**。它是**聚合库**（收录 ChiCTR、CT.gov、JPRN、CTIS 等），因此与 `chictr_trials`
+  存在系统性重叠——同一登记号命中时保留 ChiCTR 直连版本。它的 CSV 导出**静默不完整**（实测 KRAS 场景缺 29.0%），
+  所以**结果条数永远是下界**，0 命中不得表述为「不存在」。它是本插件第一个**非 Node** 依赖：Python 运行时
+  不在本项目控制范围内，必须做四级探测并给出可复制的修复命令。
 
 ---
 
@@ -49,14 +61,19 @@
 
 对两个 MCP 服务做了 JSON-RPC `initialize` + `tools/list` 握手，不是读文档。
 
-### chictr（`npx -y chictr-mcp-server@2.0.2`）✓
+### chictr（`npx -y chictr-mcp-server@3.0.2`，`CHICTR_USE_SIDECAR=1`）✓
 
 ```
-serverInfo: { name: "chictr-mcp-server", version: "2.0.2" }
-9 个工具：search_trials / get_trial_detail / get_cache_stats / clear_cache /
+serverInfo: { name: "chictr-mcp-server", version: "2.0.2" }   ← 包的 src/index.ts:170 未更新版本号（3.0.1 实测仍未修）
+10 个工具：search_trials / get_trial_detail / get_cache_stats / clear_cache /
         get_cache_stats_v2 / get_runtime_metrics / get_access_state /
-        prepare_verification_session / resume_after_verification
+        check_environment / prepare_verification_session / resume_after_verification
 ```
+
+**前置条件（3.0.0 sidecar 形态）**：需本机 Python 3.10+ 与约 1GB 运行时
+（自举 venv 约 325MB + Python 侧浏览器内核约 557MB）。调用检索前先调只读体检工具
+`check_environment`（30s 缓存，`{"refresh":true}` 强探）。未满足时记 `NEEDS_SETUP`，
+**不得记 `NO_RESULTS`**。
 
 `search_trials` 的四个参数 `keyword` / `registration_number` / `year` / `max_results`
 **全部可选**（可以只按年份或只按注册号查）。
@@ -241,7 +258,9 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
 2. **CTV 索引重建**：是否执行「备份旧库 → 重建 → 导入现有 CSV」。要动 `~/.ctv-mcp/`，等确认。
 3. **npx 首次拉包时机**：chictr 首次使用需联网拉 npm 包并依赖 Playwright Chromium（约 570MB）。
    是首次检索时静默拉取，还是提示患者确认？
-4. **CDE 是否接入**：公开检索能力有限，当前只在技能文档里作为方向提及。
+4. **CDE 是否接入**：~~公开检索能力有限，当前只在技能文档里作为方向提及。~~
+   **已定（2026-10-04）：CDE 作为统一查询来源接入，且与其他来源同等纳入扇出**（用户否决了原同意闸门设计）。
+   见 `docs/spec/xyb-unified-trial-host-orchestration.md` §4.3。CDE 随包种子仍未构建（§7.1 是新增能力）。
 5. **跨社区**：小铃铛（淋巴瘤）、小肺宝（肺癌）是否同 App 承载，仍待定
    （见 `XYB-ASSISTANTS.md`）。
 6. **`chinadrugtrials-collector` 补 LICENSE**：无 LICENSE 即默认保留所有权利，
@@ -251,3 +270,6 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
    「试验来源」面板里直接给入口，需产品定调。
 8. **抓取耗时与提醒**：逐条抓取（每条 1.5 秒）在条数多时是分钟级。
    是否要默认只抓前 N 条并提示「先看看这批，再决定要不要继续」。
+9. **WHO ICTRP 的运行时前置**：Python ≥3.10 与三个第三方库不在本项目控制范围内，是本插件第一个
+   「开箱即用」无法单方面保证的来源。若依赖缺失在用户机器上普遍发生，需在「随包 Python 运行时」与
+   「pip 指引」之间做产品决策（见 SPEC §13 门禁 10、§15.12）。

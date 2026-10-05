@@ -703,7 +703,12 @@ test("discovered mcp tools ride the existing plugin tool path", () => {
   assert.match(register, /this\.mcpCalls\.run\(/);
   assert.match(register, /client\.callTool\(tool\.name, toolArgs, signal\)/);
   // A server that fails to answer must not fail the plugin load.
-  assert.match(register, /await client\.connect\(\);\s*\n\s*\} catch \{/);
+  assert.match(register, /await client\.connect\(\);\s*\n\s*\} catch \(/);
+  // …and the reason is kept, because a toolless server is otherwise
+  // indistinguishable from one that was never declared. The trial fan-out reads
+  // this record to report the real cause instead of 「工具在当前会话中不可用」.
+  assert.match(register, /this\.mcpConnectFailures\.set\(/);
+  assert.match(register, /this\.mcpConnectFailures\.delete\(/);
 });
 
 test("mcp clients are closed when the plugin goes away", () => {

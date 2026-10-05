@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "xyb.news",
   "name": "看进展",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "汇集胰腺癌药物与研究进展条目，只列来源与链接，方便患者自行跟进。",
   "main": "main.js",
   "contributes": {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "xyb.trial-sources",
   "name": "中国与区域试验来源",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）、Veeva CTV 与中国药物临床试验登记与信息公示平台。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
   "main": "main.js",
   "contributes": {
@@ -22,30 +22,80 @@
         "keywords": ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台", "药物临床试验登记"]
       }
     ],
-    "skills": ["skills/china-trials.md", "skills/china-drug-trials.md"],
+    "skills": [
+      "skills/china-trials.md",
+      "skills/china-drug-trials.md",
+      "skills/who-ictrp.md"
+    ],
     "mcpServers": [
       {
         "id": "chictr",
         "label": "ChiCTR 中国临床试验注册中心",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "chictr-mcp-server@2.0.2"]
+        "args": ["-y", "chictr-mcp-server@3.0.2"],
+        "env": {
+          "CHICTR_USE_SIDECAR": "1"
+        }
       },
       {
         "id": "veeva-ctv",
         "label": "Veeva CTV（本地索引）",
         "transport": "stdio",
-        "command": "ctv-mcp-server"
+        "command": "npx",
+        "args": ["-y", "ctv-mcp-server@0.1.0"]
       },
       {
         "id": "chinadrugtrials",
         "label": "中国药物临床试验登记与信息公示平台",
         "transport": "stdio",
         "command": "./mcp/chinadrugtrials-mcp.mjs"
+      },
+      {
+        "id": "who-ictrp",
+        "label": "WHO ICTRP（全球多注册库汇总）",
+        "transport": "stdio",
+        "command": "python3",
+        "args": ["-m", "ictrp_mcp.server"],
+        "env": {
+          "PYTHONPATH": "./mcp/ictrp",
+          "ICTRP_BUNDLE_PATH": "./data/ictrp/pancreatic-cancer.json"
+        },
+        "callTimeoutMs": 60000
       }
     ]
   },
   "permissions": ["ui.view", "agent.prompt.inject", "mcp.server.local"],
+  "settings": [
+    {
+      "key": "veevaDataDir",
+      "type": "string",
+      "title": "Veeva CTV 数据目录",
+      "description": "Veeva CTV 本地索引（ctv.db）所在目录。留空（推荐）使用 ~/.ctv-mcp：首次启动时若无索引，会自动把随应用分发的种子数据复制到这里，之后你的刷新结果也写在这里。仅当你把索引放在别处时才需要填。",
+      "default": ""
+    },
+    {
+      "key": "chictrSeedDir",
+      "type": "string",
+      "title": "ChiCTR 冷启动快照目录",
+      "description": "ChiCTR 结构化快照（pancreatic_trials.json）的复制目标目录。留空（推荐）使用 ~/.xyb-chictr。快照只含胰腺癌相关试验，是联网查询失败时的兜底数据；目录已存在时不覆盖你的数据。",
+      "default": ""
+    },
+    {
+      "key": "cdeSeedDir",
+      "type": "string",
+      "title": "CDE 冷启动归档目录",
+      "description": "中国药物临床试验登记平台胰腺癌冷启动归档 JSON 的复制目标目录。留空（推荐）使用 ~/.xyb-chinadrugtrials/output/胰腺癌/json，这是 MCP 读取本地归档的实际位置。归档只含胰腺癌相关试验；目录已存在时不覆盖你自己的抓取结果。",
+      "default": ""
+    },
+    {
+      "key": "ictrpSeedDir",
+      "type": "string",
+      "title": "WHO ICTRP 快照目录",
+      "description": "留空（推荐）使用随包分发的快照（6262 条，关键词 pancreatic cancer）。只有你想换成自己构建的快照（例如换关键词、或更新过期的快照）时才需要填：填一个目录，运行时按 pancreatic-cancer.json 在里面查找。",
+      "default": ""
+    }
+  ],
   "engines": {
     "piDesktop": ">=0.1.0"
   },

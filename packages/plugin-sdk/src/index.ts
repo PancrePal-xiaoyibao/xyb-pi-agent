@@ -556,6 +556,17 @@ export type PluginMcpServerContrib = {
   /** http only: an absolute `http://` or `https://` endpoint. */
   url?: string;
   headers?: Record<string, string | { setting: string }>;
+  /**
+   * Per-call timeout for this server's tool calls, in milliseconds.
+   *
+   * Omit it and calls inherit the host default (`MCP_CALL_TIMEOUT_MS`,
+   * currently 100s), which is sized for a local process answering from memory.
+   * A server whose tools reach a slow upstream — a Python service walking a
+   * multi-megabyte export, say — must declare its own budget, because the
+   * failure mode of inheriting the default is not a fast error but a
+   * healthy-looking call cut off mid-flight and reported as a failure.
+   */
+  callTimeoutMs?: number;
 };
 
 export type PluginServiceContrib = {
