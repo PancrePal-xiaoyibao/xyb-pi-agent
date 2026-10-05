@@ -215,3 +215,4 @@ test("the fix line names the module that is actually missing", async () => {
   assert.match(result.fixCommand, /pip install pydantic\b/);
   assert.doesNotMatch(result.fixCommand, /\bmcp\b/, "已装好的包不应出现在修复命令里");
 });
+

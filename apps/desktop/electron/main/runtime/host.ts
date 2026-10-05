@@ -7,7 +7,7 @@ import type { PluginRuntime } from "../plugin-runtime";
 import type { UserMcpRuntime } from "../user-mcp";
 import type { RuntimeState } from "./context";
 import type { FinishTurn } from "./plans";
-import { isTrialCompositeTool, runTrialComposite } from "../trial-fanout";
+import { TRIAL_PLUGIN_ID, isTrialCompositeTool, runTrialComposite } from "../trial-fanout";
 import { childToolName } from "../trial-sources";
 import { probeIctrpRuntime } from "../trial-runtime";
 
@@ -160,6 +160,19 @@ export function createHostRuntime({
           ? (sessionProjects.get(q.sessionId) ?? null)
           : null;
         const tool = plugins.getTools().find((t) => t.fullName === q.toolName);
+        // SPEC §4.1: the trial composite exists ONLY as a host-side entry in the
+        // catalog the model is offered. The plugin registers it as a stub whose
+        // `execute` throws, and `plugin-runtime` can therefore legitimately drop
+        // it from `plugins.getTools()` (the stub is registered by the plugin, but
+        // the host may serve a catalog built without it). The `!tool` branch
+        // below answers TOOL_NOT_FOUND and returns *before* the composite
+        // interception further down, so a missing catalog entry made the entire
+        // fan-out unreachable in the running app while every unit test passed:
+        // the tests call `runTrialComposite` directly and never go through this
+        // dispatch. Treat the composite as present whenever the plugin itself is
+        // loaded, so the interception below is reached.
+        const compositeFromHost = isTrialCompositeTool(q.toolName)
+          && plugins.getTools().some((t) => t.pluginId === TRIAL_PLUGIN_ID);
         let payload: Record<string, unknown>;
         if (q.toolName.startsWith("mcp_")) {
           try {
@@ -176,14 +189,14 @@ export function createHostRuntime({
               content: { error: e instanceof Error ? e.message : String(e) },
             };
           }
-        } else if (!tool) {
+        } else if (!tool && !compositeFromHost) {
           payload = {
             executionId: q.executionId,
             ok: false,
             errorCode: "TOOL_NOT_FOUND",
             content: { error: `plugin tool not loaded: ${q.toolName}` },
           };
-        } else if (!pluginActiveInProject(tool.pluginId, projectPath)) {
+        } else if (!compositeFromHost && !pluginActiveInProject(tool!.pluginId, projectPath)) {
           // The catalog already hid it, but a session assembled before the
           // scope changed can still ask.
           payload = {
@@ -315,7 +328,10 @@ export function createHostRuntime({
               });
               payload = { executionId: q.executionId, ok: true, content: result };
             } else {
-              const result = await tool.execute(q.args, {
+              // Reaching here means neither `mcp_` nor the composite branch
+              // matched, so the catalog entry exists (the `!tool` guard above
+              // rejects everything else) and `compositeFromHost` is false.
+              const result = await tool!.execute(q.args, {
                 sessionId: q.sessionId,
                 turnId: q.turnId,
                 mode: sessionMode,

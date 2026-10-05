@@ -18,6 +18,7 @@
  */
 
 import type { TrialSource } from "./trial-fanout.ts";
+import { pluginToolName } from "@pi-desktop/plugin-sdk";
 
 /** @typedef {"condition_terms" | "keyword_maxresults" | "keyword_limit_offset" | "keywords_pages"} ArgShape */
 /** @typedef {"remote_registry" | "local_index" | "archived_scrape" | "aggregator_registry"} SourceKind */
@@ -196,12 +197,30 @@ export function isUpstreamIncomplete(key: string): boolean {
  * Deliberately derived from the descriptor rather than accepted from a caller:
  * a child call that names its own tool is a child call that can name someone
  * else's tool.
+ *
+ * **Built with `pluginToolName`, never by string interpolation.** The previous
+ * template hand-wrote `plugin_${pluginId}_${serverId}_${toolName}`, which looks
+ * right and is wrong on every source: the catalog registers through
+ * `pluginToolName`, which sanitises `[^a-zA-Z0-9_]` to `_`. So the plugin id
+ * `xyb.trial-sources` registers as `xyb_trial_sources`, and the server ids
+ * `veeva-ctv` / `who-ictrp` / `chictr-mcp-server` lose their hyphens. Every
+ * derived name carried the dots and hyphens the catalog had replaced, matched
+ * nothing, and the fan-out reported all five sources as
+ * `TOOL_UNAVAILABLE / 当前会话中不可用` while the tools were loaded and working.
+ *
+ * The production symptom was "0/5 来源覆盖，五个都说工具在任何会话都不可用".
+ * Unit tests passed because the tests' fake catalogs were built with the same
+ * wrong string, so the two mistakes agreed with each other.
+ *
+ * MCP tools are registered under the *key* `pluginMcpToolKey(serverId, toolName)`
+ * = `${serverId}_${toolName}`, then passed through `pluginToolName` — so the two
+ * halves must be joined before sanitising, exactly as done below.
  */
 export function childToolName(source: TrialSource): string {
-  if (source.serverId) {
-    return `plugin_${source.pluginId}_${source.serverId}_${source.toolName}`;
-  }
-  return `plugin_${source.pluginId}_${source.toolName}`;
+  const localKey = source.serverId
+    ? `${source.serverId}_${source.toolName}`
+    : source.toolName;
+  return pluginToolName(source.pluginId, localKey);
 }
 
 /**

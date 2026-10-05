@@ -49,25 +49,66 @@ test("registers exactly the five v1 sources in display order", () => {
   ]);
 });
 
-test("names each source's tool with the plugin-tool identity the host dispatches", () => {
+// The bug this test originally shipped with: it hard-coded identities with the
+// plugin id's dot and the server ids' hyphens intact
+// (`plugin_xyb.trial-sources_who-ictrp_ictrp_search`). Those strings look right
+// and match nothing: the catalog registers through `pluginToolName`, which
+// sanitises every non-word character to `_`. The test asserted the fan-out's own
+// mistake back at it, so all five sources failed in production with
+// `TOOL_UNAVAILABLE` while this file stayed green.
+//
+// Therefore the expectation is now derived from the same function the catalog
+// uses, and an explicit negative case pins the old shape out of existence.
+test("names each source's tool with the plugin-tool identity the host dispatches", async () => {
+  const { pluginToolName } = await import("@pi-desktop/plugin-sdk");
+  const expectIdentity = (source) =>
+    pluginToolName(
+      source.pluginId,
+      source.serverId ? `${source.serverId}_${source.toolName}` : source.toolName,
+    );
+
+  for (const source of TRIAL_SOURCES) {
+    const actual = childToolName(source);
+    assert.equal(
+      actual,
+      expectIdentity(source),
+      `${source.key} 的全名必须与目录登记口径一致`,
+    );
+    // 目录侧登记的字符串里不可能出现点号/连字符：它们已被 sanitize
+    assert.doesNotMatch(
+      actual,
+      /[.\-]/,
+      `${source.key} 的全名残留了点号或连字符，必然匹配不到目录`,
+    );
+  }
+
+  // Pinned literals, one per registration shape, to catch a silent change of
+  // the sanitising rule itself.
   assert.equal(
     childToolName(sourceByKey("chictr")),
-    "plugin_xyb.trial-sources_chictr_search_trials",
-  );
-  assert.equal(
-    childToolName(sourceByKey("veeva_ctv")),
-    "plugin_xyb.trial-sources_veeva-ctv_search_studies",
+    "plugin_xyb_trial_sources_chictr_search_trials",
   );
   assert.equal(
     childToolName(sourceByKey("chinadrugtrials")),
-    "plugin_xyb.trial-sources_chinadrugtrials_search_trials",
+    "plugin_xyb_trial_sources_chinadrugtrials_search_trials",
   );
   assert.equal(
     childToolName(sourceByKey("who_ictrp")),
+    "plugin_xyb_trial_sources_who_ictrp_ictrp_search",
+  );
+  // A plugin agentTool (not an MCP server) has no server segment. Its plugin id
+  // has no dot to sanitise, so the old and new forms coincide here — which is
+  // exactly why this source alone never revealed the bug.
+  assert.equal(
+    childToolName(sourceByKey("clinicaltrials_gov")),
+    "plugin_xyb_trials_xyb_trials_search",
+  );
+
+  // Negative case: the pre-fix shape must never come back.
+  assert.notEqual(
+    childToolName(sourceByKey("who_ictrp")),
     "plugin_xyb.trial-sources_who-ictrp_ictrp_search",
   );
-  // A plugin agentTool (not an MCP server) has no server segment.
-  assert.equal(childToolName(sourceByKey("clinicaltrials_gov")), "plugin_xyb.trials_xyb_trials_search");
 });
 
 test("every declared serverId exists in the trial-sources manifest", () => {
