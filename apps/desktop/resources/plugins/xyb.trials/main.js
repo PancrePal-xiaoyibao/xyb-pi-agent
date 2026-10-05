@@ -304,12 +304,66 @@ async function onLoad() {
     },
     execute: async (args) => unified.buildResult(args || {}),
   });
+
+  // —— F3：五渠道真扇出 ——
+  // 与上面的 xyb_trials_unify 是**两个不同的工具，各管一件事**：
+  //   xyb_trials_unify  —— 合并。调用方已经把各来源结果取回来了，交给它规范化去重。
+  //   xyb_trials_fanout —— 扇出。调用方只给一个查询，由宿主一次性并行查五处。
+  //
+  // 为什么必须是两个名字：这两件事的**责任方不同**。合并是纯函数，谁取的数据谁负责；
+  // 扇出要由宿主发起，因为只有宿主能重入 tools.execute，从而让五个子调用各自保留
+  // 权限提示、会话授权、准入预算与审计记录（SPEC §4.2）。合成一个名字就必然要猜
+  // 调用方想要哪一个，而猜错的两种后果都很糟：把「合并」猜成「扇出」会丢弃调用方
+  // 已经取回的数据，把「扇出」猜成「合并」会让它拿到一个空结果。
+  //
+  // 本 execute 永远不会被调用：宿主在 plugins.execute 里按全名拦截
+  // plugin_xyb_trials_xyb_trials_fanout 并改走 runTrialComposite。留在这里是为了让
+  // 工具在目录里可见、可被 ToolSearch 找到，从而模型知道有这么个入口。若拦截因故
+  // 未生效，它会抛错而不是假装成功——一个响亮的失败远好过一个安静的空清单。
+  await pi.agent.registerTool({
+    name: "xyb_trials_fanout",
+    description:
+      "一次性并行检索五个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记与信息公示平台 / WHO ICTRP），" +
+      "把结果规范化、保守合并成统一清单——**不需要你先逐个调用各来源工具**。" +
+      "凡是要「五个渠道分别有多少条」「各国注册库都覆盖了吗」「有没有漏查」这类问题，用本工具。" +
+      "只要给一个关键词即可（keywords 或 condition 至少填一个）。" +
+      "**返回值里的 coverage.sentence 与 completeness.sentence 必须原样呈现给用户**：" +
+      "它们写明本次真的覆盖了哪几处、哪几处没查；只要 coverage.complete 为 false，" +
+      "就不得把结果说成「五渠道汇总」或「各渠道数量」，必须如实说明哪几处没查，" +
+      "并说清未覆盖不等于没有结果。" +
+      "**WHO ICTRP（who_ictrp）是聚合库**：它的条数是下界，成功时也必须分开报" +
+      "（实得行数 vs 上游自报总数），不得把两个数合成一个「共 N 条」；" +
+      "同一条中国试验会与 ChiCTR 重复，合并后保留 ChiCTR 直连版并标注「via WHO ICTRP」。" +
+      "若你**已经**分别取回了各来源结果、只想让它们合并，请改用 xyb_trials_unify 并把结果放进 sourceResults。" +
+      "仅整理公开信息，不构成医疗建议。",
+    risk: "low",
+    schema: {
+      type: "object",
+      properties: {
+        keywords: {
+          type: "string",
+          description: "检索关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」；药物名/靶点也填这里。",
+        },
+        condition: {
+          type: "string",
+          description: "病种，英文更准，例如 pancreatic cancer。只填病种，不要把药名填在这里。",
+        },
+      },
+    },
+    execute: async () => {
+      throw new Error(
+        "xyb_trials_fanout 由宿主执行：宿主应在 plugins.execute 中按全名拦截并改走 runTrialComposite。" +
+          "若你看到本错误，说明宿主拦截未生效（工具全名与 TRIAL_COMPOSITE_TOOL 不一致）。",
+      );
+    },
+  });
 }
 
 async function onUnload() {
   await pi.commands.unregister("xyb.trials.search");
   await pi.agent.unregisterTool("xyb_trials_search");
   await pi.agent.unregisterTool("xyb_trials_unify");
+  await pi.agent.unregisterTool("xyb_trials_fanout");
 }
 
 async function onPanelInvoke(channel, payload) {

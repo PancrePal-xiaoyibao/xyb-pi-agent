@@ -144,7 +144,16 @@ function toArray(value) {
 }
 
 /** 地点字段统一成对象，容忍来源给出的纯字符串。 */
-function normalizeLocations(raw) {
+/**
+ * 把各来源**真实用的**地点列压成统一的 locations 数组。
+ *
+ * 与标题/状态的候选表缺陷同形：面板读 `record.locations`，而真实载荷里
+ * `locations` 一个都没有（ChiCTR 468/468 行无、ICTRP 6262 行无）。真实用的是
+ * ICTRP 快照的 `countries`（5845/6262 行，值是 `['Australia']` 这样的国名数组）
+ * 与随包 ChiCTR 归档的 `institution`（468/468 行，值是「西安交通大学第一附属医院」）。
+ * 少了它们，卡片上的「地点：」一行从来不出现。
+ */
+function normalizeLocations(raw, extra) {
   const out = [];
   for (const item of toArray(raw)) {
     if (typeof item === "string") {
@@ -159,6 +168,14 @@ function normalizeLocations(raw) {
       if (value) loc[key] = value;
     }
     if (Object.keys(loc).length > 0) out.push(loc);
+  }
+  // 来源特有的地点列。`extra` 是已归一化的补充地点（由 normalizeRecord 传入），
+  // 只有在上面的通用列表什么都没产出时才使用——通用列表有值时它是权威。
+  if (out.length === 0 && extra) {
+    for (const value of toArray(extra)) {
+      const v = text(value);
+      if (v) out.push({ site: v });
+    }
   }
   return out;
 }
@@ -178,8 +195,21 @@ function isDomestic(location) {
  */
 function normalizeRecord(source, raw) {
   const item = raw && typeof raw === "object" ? raw : {};
+  // `registration_number` 是随包 ChiCTR 归档**真正用的**字段名：实测 468/468 行
+  // 都带它（形如 `ChiCTR-DCC-14004957`），而 registryId / registry_id / nctId / id
+  // 一个都没有。漏了它，每条 ChiCTR 记录都是「无登记号」，于是永远不参与合并——
+  // 合并规则本身是对的，只是拿不到输入。
+  // `trial_id` 是 WHO ICTRP 快照的主键（实测 6262/6262 行），同理。
   const registryId = text(
-    item.registryId || item.registry_id || item.nctId || item.id || item.reg_no || item.regNo,
+    item.registryId ||
+      item.registry_id ||
+      item.registration_number ||
+      item.registrationNumber ||
+      item.trial_id ||
+      item.nctId ||
+      item.reg_no ||
+      item.regNo ||
+      item.id,
   );
   const extraIds = toArray(item.registryIds || item.crossReferences || item.cross_references)
     .map((v) => text(typeof v === "object" && v ? v.id || v.registryId : v))
@@ -195,16 +225,47 @@ function normalizeRecord(source, raw) {
     sourceRecordKey: sourceRecordKey(source, registryId),
     registryId,
     registryIds,
-    title: text(item.title || item.briefTitle || item.name),
-    sourceStatusRaw: text(item.sourceStatusRaw || item.status || item.overallStatus || item.state),
+    // WHO ICTRP 快照**没有** title / brief_title / name（6262 行全空），
+    // 用的是 scientific_title（6221 行）与 public_title（6260 行）；
+    // 招募状态同理：没有 status / overallStatus / sourceStatusRaw（6262 行全空），
+    // 用的是 recruitment_status（6233 行）。漏了这两个名字，
+    // 扇出路径上每条 ICTRP 记录都是无标题、无状态的空卡片。
+    title: text(
+      item.title ||
+        item.briefTitle ||
+        item.scientific_title ||
+        item.scientificTitle ||
+        item.public_title ||
+        item.publicTitle ||
+        item.name,
+    ),
+    sourceStatusRaw: text(
+      item.sourceStatusRaw ||
+        item.recruitment_status ||
+        item.recruitmentStatus ||
+        item.overallStatus ||
+        item.overall_status ||
+        item.status ||
+        item.state,
+    ),
     phase: text(item.phase || (Array.isArray(item.phases) ? item.phases.join(" / ") : "")),
     conditions: toArray(item.conditions).map(text).filter(Boolean),
     interventions: toArray(item.interventions || item.drugs || item.drugs_name)
       .map((v) => text(typeof v === "object" && v ? v.name || v.interventionName : v))
       .filter(Boolean),
-    locations: normalizeLocations(item.locations),
-    sourceUrl: text(item.sourceUrl || item.url || item.link),
-    fetchedAt: text(item.fetchedAt) || new Date().toISOString().slice(0, 10),
+    // 来源特有的地点列：ICTRP 快照 `countries`（国名数组，5845/6262 行）、
+    // 随包 ChiCTR 归档 `institution`（468/468 行）。两者都不是 `locations`。
+    locations: normalizeLocations(item.locations, [
+      ...toArray(item.countries),
+      ...toArray(item.country),
+      ...toArray(item.institution),
+    ]),
+    sourceUrl: text(item.sourceUrl || item.url || item.link || item.web_address || item.detail_url),
+    fetchedAt: text(item.fetchedAt || item.updated_at || item.last_refreshed_date) || "",
+    // 面板用 `it.id` 渲染每张卡片上的登记号标签（trials.html:215），
+    // 而这里此前**从不输出 id**——registryId 只用于内部合并，于是那个标签
+    // 永远是空的。第 40 条记录有登记号、却一条都显示不出来。
+    id: registryId,
   };
 }
 
@@ -227,11 +288,18 @@ function sourceStatus(source, input) {
     state,
     resultCount: state === "SUCCESS" ? toArray(raw.records).length : 0,
     explanation: text(raw.explanation) || defaultExplanation(state),
+    // 可复制的一行修复命令（SPEC §15.9 第 3 条）。只有真探测过运行环境的那条路径
+    // 才会带上它；缺失时留空——**不替用户猜一条命令**，那会把「我不知道怎么修」
+    // 伪装成「照这个敲就行」。
+    fixCommand: text(raw.fixCommand) || undefined,
     fetchedAt: text(raw.fetchedAt) || undefined,
     // 下界契约：上游不完整的来源即使 SUCCESS，条数也只是下界。
     upstreamIncomplete: upstreamIncomplete || undefined,
     upstreamReportedTotal,
     matchedRowsReturned,
+    // WHO ICTRP 处理这批数据的日期（条款 4.b(3) 要求显示）。原样透传上游文本，
+    // 缺失时留空——不编造，也不用抓取时间顶替（那是"我们何时取的"，不是"WHO 何时处理的"）。
+    processedAt: text(raw.processedAt) || undefined,
     // 与哪些来源系统性重叠（同一条试验可能各进一次）
     overlapWith: SOURCE_OVERLAPS[source] ? [...SOURCE_OVERLAPS[source]] : undefined,
   };
@@ -391,7 +459,40 @@ function mergeGroup(source_records) {
       .map((r) => ({ source: r.source, url: r.sourceUrl })),
     // 冲突不掩盖：逐来源列出原始取值，由用户与医生判断
     perSource: { title: titles, phase: phases, sourceStatusRaw: statuses },
+    // 来源标注（SPEC §15.9 第 6/9 条）。条例要求的是**每条被合并进来的版本**
+    // 都要说清它是谁、经谁而来，而不只是丢掉的那一条不进主记录就算完事：
+    // 「ICTRP 收录的中国试验」与「ChiCTR 直连的同一试验」在用户眼里必须可区分，
+    // 否则无从判断该去哪个门户核对更新。
+    //   - 一手来源：`ChiCTR`
+    //   - 经聚合库收录的一手来源：`ChiCTR via WHO ICTRP`
+    //   - 纯聚合库自身：`WHO ICTRP`
+    sourceLabels: records.map((r) => ({
+      source: r.source,
+      label: sourceAttributionLabel(primary.source, r.source),
+    })),
   };
+}
+
+/**
+ * 一条记录的来源标注文案（SPEC §15.9 第 6 条：ICTRP 版本标「via WHO ICTRP」）。
+ *
+ * `primarySource` 是合并后保留主记录的那一个；其余来源是"经它收录"的版本。
+ * 当聚合库收录的登记号恰好属于另一手来源时，写出「<一手来源> via <聚合库>」，
+ * 因为只写 `WHO ICTRP` 会让人以为这是 WHO 自己的试验。
+ */
+function sourceAttributionLabel(primarySource, source) {
+  const key = text(source);
+  if (!key) return "";
+  const display = SOURCE_LABELS[key] || key;
+  if (key === primarySource) return display;
+  const routesThrough = SOURCE_OVERLAPS[key] || [];
+  // 只在该来源确实是某个已在场的一手来源的聚合库时才说 "via"，
+  // 否则会把并列的其他一手来源也写成"经聚合库收录"。
+  const firstHand = routesThrough.find((candidate) => candidate === primarySource);
+  if (firstHand && key === "who_ictrp") {
+    return `${SOURCE_LABELS[firstHand] || firstHand} via ${display}`;
+  }
+  return display;
 }
 
 const RECRUITING_HINT =
@@ -612,6 +713,8 @@ module.exports = {
   SOURCE_KINDS,
   UPSTREAM_INCOMPLETE_SOURCES,
   SOURCE_OVERLAPS,
+  SOURCE_LABELS,
+  sourceAttributionLabel,
   STATES,
   normalizeRegistryId,
   sourceRecordKey,

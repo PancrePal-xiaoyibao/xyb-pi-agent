@@ -53,7 +53,7 @@ description: 需要查询任何临床试验相关的信息时使用——包括�
 | `chinadrugtrials` | 药物临床试验登记与信息公示平台 | MCP：`chinadrugtrials` 的 `get_collector_status` → `search_trials` | 未就绪 → `NEEDS_SETUP`；会话失效 → `SESSION_EXPIRED` |
 | `who_ictrp` | WHO ICTRP（聚合库） | MCP：`ictrp` 的 `ictrp_search` | 缺 Python/依赖 → `NEEDS_SETUP`；上游不完整 → `SUCCESS` 但**条数是下界** |
 
-本插件提供的工具是**按需激活**的：先 `ToolSearch` 查一次工具名（如 `xyb_trials_search`、`xyb_trials_unify`），
+本插件提供的工具是**按需激活**的：先 `ToolSearch` 查一次工具名（如 `xyb_trials_search`、`xyb_trials_fanout`、`xyb_trials_unify`），
 返回 "Activated on-demand tools" 后**下一轮**才能调用。直接调用会得到 `Tool plugin_... not found`。
 
 ### 渠道 5 的四个特例（WHO ICTRP，必须照做）
@@ -99,7 +99,34 @@ ICTRP 版本必须标注 **「ChiCTR via WHO ICTRP」**——**不得标成「Ch
 
 ## 二、执行顺序（严格照做）
 
-1. **先激活**：`ToolSearch` 找到本插件的两个工具，以及已启用来源插件的 MCP 工具。
+**先选路径。** 本插件提供两个工具，回答的是不同问题，**别互相替代**：
+
+| 你的问题 | 用哪个 | 要做的事 |
+|---|---|---|
+| 「五个渠道分别有多少条」「都覆盖了吗」「有没有漏查」 | **`xyb_trials_fanout`** | 给一个关键词，**一步到位**。宿主并行查五处并合并。**不要**再手工逐个调各渠道工具 |
+| 几个渠道的结果**我已经取回来了**，只想合并去重 | **`xyb_trials_unify`** | 把各来源结果放进 `sourceResults` 传进去。它**只做合并，不取数** |
+
+**默认走 `xyb_trials_fanout`**（一次调用换五处覆盖，比手工五次更快，也更不容易漏）。
+只有当你已经因为别的原因拿到了各渠道原始结果、不想再查一遍时，才走 `xyb_trials_unify`。
+
+### 路径 A：`xyb_trials_fanout`（默认，一步到位）
+
+```json
+{ "keywords": "<本次关键词>", "condition": "<病种，英文更准>" }
+```
+
+`keywords` 与 `condition` 至少填一个，建议都填。返回体里已经有五处来源的状态、双数字下界、
+WHO 条款归因与手工 MCP 重叠提示。**`coverage.sentence`、`completeness.sentence` 与
+`overlapsSentence`（非空时）必须原样呈现给用户**（见第四节）。`overlapsSentence` 说明你手工配置的
+MCP 服务与某个内置来源指向同一数据源、两条通道未去重——**只要它非空就必须说，不能省略**：
+该情况下报出的条数不再保证是下界。**本字段只有扇出路径有**（见第四节）；若走路径 B 而你手工配过
+MCP 服务，必须自己声明这一点。若返回里有来源是 `NEEDS_SETUP`，把它的 `fixCommand` 原样贴给用户。
+
+### 路径 B：`xyb_trials_unify`（已自行取数时才用）
+
+按下面的顺序手工取数，再把结果交给 `xyb_trials_unify` 合并。**仅在路径 A 不适用时使用。**
+
+1. **先激活**：`ToolSearch` 找到本插件的工具，以及已启用来源插件的 MCP 工具。
 2. **渠道 1（ClinicalTrials.gov）**：调 `xyb_trials_search`（`condition` 用英文更准，`terms` 可中文）。
 3. **渠道 2（ChiCTR）**：调 ChiCTR MCP 的 `search_trials`，**中英文各查一次**（见下方「语言策略」）。
 4. **渠道 3（Veeva CTV）**：调 Veeva CTV MCP 的 `search_studies`（需要中国结果时加 `country: "China"`）。
@@ -186,12 +213,19 @@ ICTRP 版本必须标注 **「ChiCTR via WHO ICTRP」**——**不得标成「Ch
 
 ### 覆盖 ≠ 完整（两个不同的契约，都要呈现）
 
-`xyb_trials_unify` 会返回**两句话**，它们回答的是不同问题，**两句都要转述**：
+`xyb_trials_fanout` 与 `xyb_trials_unify` 都会返回 `coverage.sentence` 与 `completeness.sentence`
+这两句话，它们回答的是不同问题，**两句都要转述**：
 
 | 字段 | 回答的问题 | 什么时候是 false / 有内容 |
 |---|---|---|
 | `coverage.sentence` | **查了哪几处** | 有来源没真跑（`NEEDS_SETUP` / `TIMEOUT` / …）时报「未覆盖」 |
 | `completeness.sentence` | **拿到的数字是什么性质** | 查过的来源里若有返回集是下界的（`who_ictrp`），报「条数是下界」 |
+
+**`overlapsSentence` 只有 `xyb_trials_fanout` 有，`xyb_trials_unify` 没有。** 宿主扇出能自己
+枚举用户配置了哪些 MCP 服务器（`mcp_*`），因此能发现「你手工配的 `chictr` 与内置 `chictr`
+是同一数据源」；插件 API 面没有枚举用户 MCP 服务器的能力，所以合并路径**无法**产出这句话。
+**不要因为路径 B 没返回它，就以为没有重叠**——那句话不是「查过了没问题」，是「这个通道问不出来」。
+若你手工配过 MCP 服务，且本次是走路径 B，请在回答里说明你未经去重核对的来源有哪些。
 
 **「五个渠道都查了」不等于「这就是全部符合条件的试验」。** 前者的 `coverage.complete` 可以是
 `true`，同时后者的 `completeness.countsAreLowerBounds` 也是 `true`——因为 WHO ICTRP 自己在
@@ -199,7 +233,7 @@ ICTRP 版本必须标注 **「ChiCTR via WHO ICTRP」**——**不得标成「Ch
 
 ## 四、去重与合并（很保守）
 
-`xyb_trials_unify` 只在下列情况自动合并：规范化登记号完全相同、来源显式交叉引用、可审计的官方映射。
+两个工具都只在下列情况自动合并：规范化登记号完全相同、来源显式交叉引用、可审计的官方映射。
 
 **不会**因为标题、药物、地点、申办方、疾病相似而合并。标题相同但都没有登记号的，会保留两条并给
 「可能相关、未自动合并」提示——**不要**自行替它们下结论。

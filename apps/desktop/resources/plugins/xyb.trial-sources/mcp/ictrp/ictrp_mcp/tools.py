@@ -35,16 +35,33 @@ from .provenance import INCOMPLETENESS_NOTICE, Provenance, derive_set_provenance
 
 #: Fields shown by default when a caller does not ask for specific ones. Chosen to
 #: be the high-coverage, decision-relevant columns rather than all 58.
+#: The default view. Deliberately NOT just the 10 most common columns: it is the
+#: view a clinician actually needs to triage a target -- name, sponsor/PI, where
+#: it runs, eligibility shape, and a treatment-line hint. Sponsor/PI come from the
+#: `primary_sponsor` + `contact_*` columns (ICTRP has no dedicated "PI" or
+#: "participating-hospital" field; hospitals exist only as `countries` and the
+#: contact's affiliation), so those are surfaced here. `line_of_therapy_hint` is a
+#: non-authoritative extraction from the free-text criteria -- see normalize.py.
 DEFAULT_FIELDS: tuple[str, ...] = (
     "trial_id",
     "source_register",
     "public_title",
+    "scientific_title",
+    "primary_sponsor",
+    "secondary_sponsor",
+    "contact_firstname",
+    "contact_lastname",
+    "contact_affiliation",
     "recruitment_status",
     "phase_code",
     "registration_date",
     "condition",
     "countries",
+    "inclusion_age_min",
+    "inclusion_age_max",
+    "inclusion_gender",
     "target_size_total",
+    "line_of_therapy_hint",
     "last_refreshed_display",
 )
 

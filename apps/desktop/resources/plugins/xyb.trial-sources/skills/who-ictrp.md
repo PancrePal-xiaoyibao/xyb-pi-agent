@@ -23,7 +23,7 @@ description: 当需要查询 WHO ICTRP（全球临床试验注册库汇总）时
 | 条数语义 | **是下界**——返回集系统性小于上游自报的匹配数（见第三节） |
 
 **下游影响：** 同一条中国试验会同时被 ChiCTR 与 ICTRP 命中。合并时保留 **ChiCTR 直连版**（更实时），
-ICTRP 版进 `mergedFrom`。这在 `xyb_trials_unify` 里自动发生，但你**必须**在回答里按第五节标注来源。
+ICTRP 版进 `mergedFrom`。这在 `xyb_trials_fanout`（或 `xyb_trials_unify`）里自动发生，但你**必须**在回答里按第五节标注来源。
 
 ---
 
@@ -109,6 +109,8 @@ ICTRP **没有**「匹配总数」这个单一数字。它给出两个独立的�
 2. **检索**：`ictrp_search`，`keyword` 传英文、`limit: 100`。拿到 `set_id`。
 3. **精炼**：要筛就用 `ictrp_filter`，**不要**重搜。
 4. **整理**：把结果连同上述两个数字一起交给 `xyb_trials_unify`。
+   更简单的是直接用 `xyb_trials_fanout` 一步查完五处——那条路径由宿主并行取数，
+   这两个数字、条款归因与「via WHO ICTRP」标注都会自动带上，不必手工收集。
 
 **失败时的处理：** 该来源失败时**永不返回 0 条**（失败即报错）。所以你看到的 0 条是 `NO_RESULTS`（真的没匹配），
 不是失败；而 `NEEDS_SETUP` / `TIMEOUT` / `FAILED` 必须照实报状态，**不得**混作「查过了，没有」。

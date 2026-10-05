@@ -228,7 +228,7 @@ Electron 侧 broker 只能从宿主工具注册表中解析**固定的、经过�
 - `CHALLENGE_REQUIRED`：来源要求人工验证；永不绕过。
 - `FAILED`：传输、协议、上游或结果结构失败。
 
-终态化时每个来源恰好有一个终态。只有 `SUCCESS` 与 `NO_RESULTS` 算作“查过”。`attempted=true` 当且仅当派发已经开始。**MCP 工具未注册不等于 `NOT_ENABLED`**，应按经核实的前置证据报 `NOT_QUERIED / TOOL_UNAVAILABLE` 或 `NEEDS_SETUP`。这是实测要求的更正：2026-10-03 那个已启用且可用的 CDE 来源被标成 `NOT_ENABLED`，理由写的是“本工具未在当前上下文就绪”——那属于工具可用性问题，不是用户设置问题；这个误导性标签直接让用户没拿到本可拿到的正确结果。Veeva 的本地零命中应表述为“本地索引中未找到”，而非“没有相关研究”。
+终态化时每个来源恰好有一个终态。只有 `SUCCESS` 与 `NO_RESULTS` 算作“查过”。`attempted` 回答的**只有**「这次派发有没有开始」这一个问题：`false` 恰好对应 `{NOT_QUERIED, NOT_ENABLED, NEEDS_SETUP}`（没问 / 用户关了 / 环境没就绪），`true` 对应其余五个状态——**包括 `TIMEOUT`/`CHALLENGE_REQUIRED`/`FAILED` 这三个失败态**。它既不是 `state !== "NOT_QUERIED"`，也不是 `isQueried` 的同义词（`isQueried` 蕴含它，反之不成立）；完整配对见 §15.34。**MCP 工具未注册不等于 `NOT_ENABLED`**，应按经核实的前置证据报 `NOT_QUERIED / TOOL_UNAVAILABLE` 或 `NEEDS_SETUP`。这是实测要求的更正：2026-10-03 那个已启用且可用的 CDE 来源被标成 `NOT_ENABLED`，理由写的是“本工具未在当前上下文就绪”——那属于工具可用性问题，不是用户设置问题；这个误导性标签直接让用户没拿到本可拿到的正确结果。Veeva 的本地零命中应表述为“本地索引中未找到”，而非“没有相关研究”。
 
 
 供诊断使用、不直接展示给用户的来源级原因码：
@@ -930,9 +930,25 @@ type SourceResultV2 = {
 
 §4.4 写死并发 3，是面向四来源的。加入第 5 个来源后：
 
-- **并发上限由 3 提升到 4。** 理由：ICTRP 单次调用最长（见下），若并发保持 3，在最坏情况下 ICTRP 会被排到最后一批，把整体耗时拉长接近一倍。提升到 4 使 ICTRP 能与前三个来源同时起跑，而吞吐压力仍受控（4 个来源中只有 1 个会写缓存）。
+
+- **并发上限由 3 提升到 4。** 理由：加入第 5 个来源后并发 3 会让其中一个来源必须排在第二批次，吞吐压力仍是可控的（5 个来源中只有 1 个会写缓存）。
+  > **勘误与订正（2026-10-04 实现轮，用户裁决）：本节原写的理由是错的。** 原文称「若并发保持 3，ICTRP 会被排到最后一批，把整体耗时拉长接近一倍；提升到 4 使 ICTRP 能与前三个来源同时起跑」。**该论证不成立**：按 LPT（最长处理时间优先）排程，并发 3 时 ICTRP 同样在 t=0 起跑——并发 3 的排程为 t=0 ICTRP(60)+ChiCTR(45)+CDE(30) → t=30 换 CT.gov(20) → t=45 换 Veeva(15)，总墙钟仍是 **60s**，与并发无关。真正的临界路径是 ICTRP 自身 60s；**决定整体耗时的唯一变量是「ICTRP 是否在 t=0 出发」，而不是并发度**。
+  >
+  > **用户裁决（2026-10-04）：按 LPT 排程，把 ICTRP 放第一个。** 这推翻了此前「ICTRP 排最后（维持 §15.3.3 现状）」的裁决，理由是后者只在「并发上限 6」的前提下才零代价；一旦并发回落，ICTRP 排最后会使其在 t=15 出发、t=75 结束，**正好贴住整体期限、零余量**。实现上派发顺序不再依赖注册表顺序，而是由 `timeoutMs` 降序派生（`dispatchOrder()`，`apps/desktop/electron/main/trial-sources.ts`），并有测试同时钉住「ICTRP 第一」与「非递增期限」两条性质——这样新增来源时顺序不会悄悄退化成非 LPT。见 §15.13。
+
 - **ICTRP 单独期限 60s**，理由：ICTRP 的 `ictrp_search` 是三跳 postback，且要物化**整个**结果集（`limit=1000` 时可能上千行）后才返回，比 CT.gov 的单次 API 调用慢一个量级。
-   > **勘误（2026-10-04 实现轮）：不存在 `ICTRP_TIMEOUT`。** 本节原写「服务侧 `ICTRP_TIMEOUT` 默认 60，编排器不得超过它」——实测 `grep timeout apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/` **零命中**，该环境变量在本版 Python 源码中不存在。真实约束是 `ictrp/session.py` 的 `IctrpSession.create(cls, *, timeout: float = 60.0)` 默认值，而 `tools.py` 调 `IctrpSession.create()` **不传 timeout** —— 也就是说 **60s 是硬编码默认，服务层没有暴露超时旋钮**。实测这台机器上 WHO 门户可达（`curl https://trialsearch.who.int/Default.aspx` → 200 / 1.44s），但同一机器上一次关键词检索仍在 60s 处 `httpx.ReadTimeout` 失败（`IctrpError: Search request failed:`），把 timeout 提到 240s 后同一检索 3.8s 完成。**结论：60s 偏紧，命中冷缓存或门户抖动时会把可用服务判成失败。** 缓解手段是不在首次扇出时依赖实时链路，而是靠 §15.3.8 的随包快照兜底（这条现在是硬要求，不是优化）。`timeoutMs: 60000` 保持不变——放宽编排器期限只会让用户等更久，而快照已经解决了首次体验。
+   > **二次勘误（2026-10-05 实现轮，覆盖前一条）：`ICTRP_TIMEOUT` 现在存在，默认 120s，且链路已具备重试。**
+> 上一条勘误写于重新 vendoring 之前，当时随包副本确实没有该旋钮；`scripts/xyb-check-ictrp-vendor.mjs` 随后抓到 `ictrp/session.py` 与上游不一致，重新 vendoring 后事实变了：
+> - `session.py:65` `DEFAULT_TIMEOUT_SECONDS = 120.0`、`:66` `ENV_TIMEOUT = "ICTRP_TIMEOUT"`，经 `timeout_seconds()` 读取；`IctrpSession.create()` 走该函数，所以 **60s 硬编码默认已不存在，现为 120s 且可覆盖**。
+> - `session.py:71` `DEFAULT_ATTEMPTS = 3`、`:72` `ENV_ATTEMPTS = "ICTRP_ATTEMPTS"`；`retry()` 对 `UPSTREAM_ERROR`/`SESSION_FAILED` 做指数退避+抖动重试，`RETRYABLE_CODES` **刻意排除** `UPSTREAM_BLOCKED`（重试一个正在拒绝的端点只会加重封禁并掩盖诊断）。
+> - `_describe()` 修掉了 `httpx.ReadTimeout` 空消息导致「`Search request failed: ` 后面什么都没有」的问题。
+> 因此 §15.6 的原始判断（「编排器不得超过服务侧默认」）**重新成立**：服务侧 120s > 编排器 60s，编排器仍是更紧的一方，`timeoutMs: 60000` 保持不变仍然正确。快照（§15.3.8）依旧保留，但它现在是「门户不可达时的兜底」而非「60s 太紧的补救」。
+>
+> **教训**：这条勘误证明 SPEC 里的「不存在某旋钮」这类否定性断言**必须绑定到 vendoring 的具体版本**，否则上游一次提交就会让它变成假的。`xyb-check-ictrp-vendor.mjs` 正是为此存在——它抓到的不只是文件差异，还有一条已经写进 SPEC 的错误结论。
+>
+> 以下是重新 vendoring 之前的原勘误，保留以备对照：
+>
+> **勘误（2026-10-04 实现轮）：不存在 `ICTRP_TIMEOUT`。** 本节原写「服务侧 `ICTRP_TIMEOUT` 默认 60，编排器不得超过它」——实测 `grep timeout apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/` **零命中**，该环境变量在本版 Python 源码中不存在。真实约束是 `ictrp/session.py` 的 `IctrpSession.create(cls, *, timeout: float = 60.0)` 默认值，而 `tools.py` 调 `IctrpSession.create()` **不传 timeout** —— 也就是说 **60s 是硬编码默认，服务层没有暴露超时旋钮**。实测这台机器上 WHO 门户可达（`curl https://trialsearch.who.int/Default.aspx` → 200 / 1.44s），但同一机器上一次关键词检索仍在 60s 处 `httpx.ReadTimeout` 失败（`IctrpError: Search request failed:`），把 timeout 提到 240s 后同一检索 3.8s 完成。**结论：60s 偏紧，命中冷缓存或门户抖动时会把可用服务判成失败。** 缓解手段是不在首次扇出时依赖实时链路，而是靠 §15.3.8 的随包快照兜底（这条现在是硬要求，不是优化）。`timeoutMs: 60000` 保持不变——放宽编排器期限只会让用户等更久，而快照已经解决了首次体验。
 - **整体期限由 50s 提升到 75s**，且**整体期限必须大于单个最长来源期限**，否则 ICTRP 永远被整体期限先杀掉。75 = 60（ICTRP 期限）+ 15s 余量。
 - **不重试**：§4.4 明确「来源不是 CDE」才允许有界重试，但 ICTRP 的失败主要是上游响应类（postback 链中某一跳失败、导出被 302 到 `/NoAccess.aspx`），**不属于** §4.4 允许重试的「2s 内启动类失败」，故 ICTRP **不进入重试例外**。
 - **`refresh=false` 本身就是一种截断控制**：同一关键词复用缓存，避免重复的三跳抓取。
@@ -987,6 +1003,7 @@ type SourceResultV2 = {
 8.（别名 39）未显式要求时，`ictrp_filter` / `ictrp_export` / `ictrp_cache_status` 等本地工具**不得**出现在扇出路径中。
 9.（别名 40）ICTRP 结果区包含 WHO 条款披露入口，且 China 试验标注为「ChiCTR via WHO ICTRP」（需有 UI 契约测试）。
 10. **宿主启动链路的三个限制已被显式处理**（§15.3.6.1，须有测试断言）：`ictrp_search` 的调用**显式**携带 `callTimeoutMs = 60000`（不得回落默认 100s）；`python3` 不在 PATH 上时落到 §15.9 第 3 条的 `PYTHON_RUNTIME_MISSING` 而非 `SOURCE_LAUNCH_FAILED`；握手阶段**不**因 10s 连接超时把「慢但可用」的 Python 服务误判为启动失败。
+    > **三款各自的断言状态（2026-10-05）**：第一款由 `apps/desktop/test/xyb-trials-ictrp-timeout.test.mjs` 断言 manifest 声明值与描述符一致（且该值不等于共享默认，确保声明是承重的）；第二款由 `trial-runtime` 的运行时探测断言落到 `PYTHON_RUNTIME_MISSING`；第三款**原先无断言**（`connectTimeoutMs` 不是 manifest 键，没有声明面可断言），现改为**测量真实链路**并留下回归断言——真实客户端连真实随包服务，冷启动三次 **1.27s / 1.28s / 1.33s** 对 10s 默认界约 **7 倍余量**，断言在**不放宽**该界的条件下完成握手、目录为 9 个工具、含 `ictrp_search`。**由测量成立的条款，要留下断言而不是记忆**，否则「测过一次」会被当成「不会变」。
 
 ### 15.10 预期改动范围（§9 补充）
 
@@ -1016,12 +1033,46 @@ type SourceResultV2 = {
 - `apps/desktop/resources/plugins/xyb.trial-sources/skills/china-trials.md` — **已改**：来源总览表「四处来源」→「五处来源」并新增 WHO ICTRP 行，frontmatter description 补一句聚合库说明，正文加一段解释它为何不能顶替一手来源。
 - `apps/desktop/resources/plugins/xyb.trial-sources/README.md` — **已改**：MCP 服务列表补 `who-ictrp`、技能列表补 `skills/who-ictrp.md`、章节标题「三个来源」→「四处来源」，并新增 WHO ICTRP 小节（形态、前置、9 工具只 1 个联网、只认英文、下界双数字、28 天快照、WHO 条款、禁止商业用途）。
 - `package.json` — **已改**：新增 `check:ictrp-vendor` 脚本。
-- 宿主侧 `TrialSourceDescriptor` 注册表（新增 `who_ictrp` 条目与三个新字段取值）— **未改**
-- 宿主侧状态机与聚合器（`UPSTREAM_RESULT_INCOMPLETE`、`overlapWith`、15.5 合并规则）— **未改**
-- UI 渲染（ICTRP 结果区、双数字呈现、条款披露、「via WHO ICTRP」标注）— **未改**
-- `docs/guide/临床新能力接入规范指导.md`（补充 Python 服务的 vendoring 形态）— **未改**
+- 宿主侧 `TrialSourceDescriptor` 注册表（新增 `who_ictrp` 条目与三个新字段取值）— **已建**（`apps/desktop/electron/main/trial-sources.ts`，见 §15.13）
+- 宿主侧状态机与聚合器（`UPSTREAM_RESULT_INCOMPLETE`、`overlapWith`、15.5 合并规则）— **已建**（`apps/desktop/electron/main/trial-orchestrator.ts`，见 §15.13）。
+  **勘误一**：`UPSTREAM_RESULT_INCOMPLETE` 此前只登记在此而未真正产出（`terminalise` 一律给 `"OK"`），2026-10-05 由对抗审计发现后补齐，见 §15.21。
+  **勘误二（2026-10-05）**：`overlapWith` 与 §15.5 的合并规则此前**同样只是登记，不是实现**——`aggregate()` 只做 `flatMap`，零去重，同一试验经 ChiCTR 与 ICTRP 两条通道到达时会**计两条**。现已实现，见 §15.24。**本条此前写着「已建」是虚报**，与本 SPEC 反复出现的「登记了但没接上」是同一类错误。
+- UI 渲染（ICTRP 结果区、双数字呈现、条款披露、「via WHO ICTRP」标注）— **已建**（`apps/desktop/resources/plugins/xyb.trials/views/trials.html` 覆盖面板，见 §15.14）
+- `crates/host-core/src/tool_budget.rs` — **已改**：`MAX_IN_FLIGHT_PLUGINS` 与 `MAX_IN_FLIGHT_PER_SESSION` 4→6（见 §15.13）
+- 手工 MCP 重叠检测（`detectManualOverlaps`）— **已建**（见 §15.14），`runtime/host.ts` 用 `userMcp.listRecords()` 喂入
+- `docs/guide/临床新能力接入规范指导.md`（补充 Python 服务的 vendoring 形态）— **已改**（见下）
 
-**§15.9 验收标准中，条目 1（来源进扇出）、2–3（探测降级）、4（双数字）、10（启动链路三限制）依赖宿主侧改动，均在未完成之列。**
+**未建项（据实登记，不虚报完成）：**
+
+> 已销账：§10 第 6 条要求的随包种子红线**自动化**测试已由 `apps/desktop/test/xyb-trial-seeds-redline.test.mjs` 落地（见上）。
+>
+> 已销账：`docs/guide/临床新能力接入规范指导.md` 的 Python vendoring 一节已补（见下）。
+>
+> 已销账（2026-10-05）：§15.9 第 10 条第一项所需的宿主能力缺口已修——`PluginMcpServerContrib` 新增 `callTimeoutMs`，`who-ictrp` 声明 `60000`（见 §15.17）。
+>
+> 已销账（2026-10-05）：§15.9 第 2/3 条的边界已由运行时探测实现——`PYTHON_RUNTIME_MISSING` / `PYTHON_DEPS_MISSING` 从此有生产代码发出（见 §15.17）。
+>
+> 已销账（2026-10-05）：§15.9 第 6/9 条的「ChiCTR via WHO ICTRP」标注此前只存在于注释里，现由 `sourceAttributionLabel` 与 `sourceLabels` 产出并由面板渲染（见 §15.18）。
+>
+> 已销账（2026-10-05）：§15.7 / §15.9 第 9 条要求的 **WHO 条款披露入口**此前不存在（面板只有一行归因 + 外链，六条义务仅写在 model-facing 的技能文档里）。现已在 `views/trials.html` 内建可折叠 `<details class="terms">`，含六条义务、两处**逐字**引文（含「in effect as long as the user retains any of the data」→ 卸载不终止义务）与无隶属声明，并有 UI 契约测试守护（见 §15.23）。
+> 已销账（2026-10-05，第二轮复核）：英文权威版此前**缺失 §15.23 整节**——只有上面这行销账引用了「见 §15.23」，正文里没有该节（中文镜像里有，而英文是唯一权威版本）。已按中文本回写英文正文，并补记这条勘误。同轮修掉四处编号簿记缺陷（重号、方言不一致、§15.36 标题错位），编号统一为首次记录顺序的连续序号（§15.15 = 第 3 处 … §15.36 = 第 19 处），两侧逐节一致。**教训：一份自己编号的文档需要一句能检查编号的规则**（见 §15.36 末尾）。
+>
+> 已销账（2026-10-05）：§15.16 的记录级归属此前在**宿主扇出路径上从未发生**——`aggregate()` 只做 `flatMap`，不打标签，而原始行没有 `source` 字段；「ChiCTR via WHO ICTRP」是空谈。现由 `tagRecords()` 逐条打 `source`/`sourceLabel`，实测 300 条中 209 条正确标注（见 §15.22）。
+>
+> 已销账（2026-10-05）：`runFanout` 对「永不返回的子调用」没有截止时间——等待循环是一句
+> 没有定时器的 `Promise.race`，占满在飞名额的挂死子调用会把它永远停住（见 §15.35）。
+> 现由 `FANOUT_WAKEUP_POLL_MS` 轮询定时器并入 race 唤醒，在飞子调用按 `TIMEOUT` 收尾。
+
+> 已销账（2026-10-05）：**无门禁覆盖中英镜像一致性**——中文镜像此前靠人工同步，条文数量、章节编号与「已销账」标记都可能单侧漂移而没有任何构建步骤会发现。现由 `scripts/check-spec-mirror-parity.mjs`（`pnpm check:spec-mirror`）守护四条结构不变量（镜像独有小节、编号唯一性与缺口序数、英文权威版交叉引用可解析、围栏配平），12 条测试 + 六份反向自证夹具（见 §15.37）。它**刻意不比较译文质量**：没有机器能判断中文段是否仍在说英文段的意思，声称能做的门禁比没有门禁更糟。
+
+- `apps/desktop/test/xyb-trial-seeds-redline.test.mjs` — **已建**（2026-10-05）：§10 第 6 条要求的**自动化**种子红线测试，6 条。
+  **它与 `scripts/xyb-sync-trial-json-seeds.mjs` 里的扫描不重复**：那个脚本扫的是**它自己刚要写下的内容**，只在有人重跑生成时生效。种子一旦提交进仓库，就可能被别的路径改动（手工修补一个 JSON、从别处拷一份覆盖、新脚本直接写文件），这些都不经过生成器。本测试扫的是**仓库里实际随包分发的那些文件**，也就是用户装到机器上的那一份。
+  覆盖：每个种子存在且非空壳；三类红线（原始留档、凭据、`raw_text` 键）零命中；**红线规则自证**（每条规则必须命中其自证样本、且不得误报正常内容——一条永远不命中的检查与没有检查是同一件事）；ICTRP 归属与 `ictrp_export_date` 齐备且**处理日期不等于抓取时间**；四个种子全部声明癌种范围并说明「其余须联网」。
+  **写入时抓到的两处事实**：①ChiCTR 种子的实际文件名是 `pancreatic_trials.json`（下划线），不是想当然的连字符；②CDE 目录里除 139 个 `CTR*.json` 外还有一个 **`index.json` 清单**（288 字节，记 `record_count: 139` / `keyword: 胰腺癌` / `built_at` / `coverage_note`），它适用体量下限会误报，故用 `dataPrefix` 把元数据与数据分开——但**清单同样要过红线扫描**，清单里出现凭据与数据文件里出现是一样的事故。
+- `docs/guide/临床新能力接入规范指导.md` — **已改**（2026-10-05，426 → 547 行）：新增 **§3.5「形态 D：随包 vendoring 一个 Python MCP 服务」**，共六个小节——`3.5.1` 为什么需要这一节（形态 B/D 在 manifest 上只差一行 `command`，但**维护责任完全不同**：B 的代码在 npm 上，D 的代码是仓库里的副本，副本落后上游不会报错，只在运行时以「某个工具神秘消失」或「某个字段恒为空」暴露，所以必须把沉默的运行期故障前移成构建期失败）；`3.5.2` vendoring 目录树约定（上游模块名原样保留、排除 `__pycache__`/`tests`/`fixtures`/`docs`/`.venv`、**与上游逐字节一致不做本地修改**、`ATTRIBUTION.md` + 许可证随包）；`3.5.3` 门禁脚本三件事（必需模块清单、无 `__pycache__`/`*.pyc`/`*.pyo`、可选逐字节比对）与**漂移必须 `fail` 不能用 `warn`** 的理由，并要求反向自证（注入一行注释应 `exit=1`）；`3.5.4` 两次真实漂移的处置表与固定四步流程；`3.5.5` **「字段存在但恒为空」比「字段不存在」更危险**（`line_of_therapy_hint` 全 `None` 的完整因果链与三步处置）；`3.5.6` 形态 D 检查清单。同时：`§0` 指向新增小节；`§7.1` 增「按 §3.5.6 自查」一条；`§7.3` 门禁命令补 `xyb-check-ictrp-vendor.mjs`；`§8` 反面案例增第 8、9 条（静默漂移、字段恒空）。
+- `docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` 中文镜像 — **已补**（2026-10-05，204 → 244 行）：新增 **§15.13**（描述符表、LPT 派发顺序及其排程论证、工具预算 4→6 的理由）、**§15.14**（broker/调度保证、子调用必须重入 `tools.execute` 的四项理由、归因、`runFanout` 派发序 vs `aggregate` 注册表序的契约分界、`aggregate` 的完整性、手工 MCP 重叠检测、UI 三件呈现、**面板的诚实边界**）、**§15.15**（第三个真缺口的完整因果链、为什么组件测试没抓到、两层处置、第四条教训）。同时修正两处陈旧陈述：§15.6 的派发顺序改为 LPT（取代早先「ICTRP 最后」的草案）、§15.12 原「未决：手工 MCP 重复计数」标记**已销账**（由 `detectManualOverlaps` 处理）。§15.5–§15.12 仍为提纲；中英镜像一致性已由 `scripts/check-spec-mirror-parity.mjs` 守护（见 §15.37），但该门禁只查结构、不查译文语义。
+
+**§15.9 验收标准中，条目 1（来源进扇出）、2–3（探测降级）、4（双数字）、10（启动链路三限制）现均已由宿主侧改动覆盖**（`trial-sources.ts` / `trial-orchestrator.ts` / `trial-fanout.ts` / `trials.html`）；与其对应的测试见 §15.13 与 §15.14。
 
 **不得修改（§9 冻结清单）：**
 
@@ -1043,7 +1094,7 @@ type SourceResultV2 = {
 - vendored 源码的**版本同步机制**：`ictrp-mcp-service` 上游更新后，如何发现并同步？（建议 `scripts/xyb-check-ictrp-vendor.mjs` 记录上游版本号并做校验，但需要定一个上游版本的权威来源。）
   > **实现轮补充：** 已用 `diff -rq` 验证三方一致——上游 `src/ictrp_mcp/`、上游 npm 包的 `sidecar/vendor/ictrp_mcp`、本仓库 vendored 的 `mcp/ictrp/ictrp_mcp` **逐文件相同**（仅 `__pycache__` 有差异）。故校验脚本的比较基准可以取三者中任一，**建议以 npm 包内 `sidecar/vendor/` 为准**（它有版本号与之同行，而裸源码树没有）。
 - ICTRP 的 60s 超时与服务侧默认是否在目标网络环境下足够（首次冷缓存下 `limit=100` 的实测耗时需补测）。
-  > **已由 §15.6 勘误回应：** `ICTRP_TIMEOUT` 不存在，60s 是 `IctrpSession.create()` 的硬编码默认；实测同机同 URL 先超时后 3.8s 成功，说明 60s 偏紧。**随包快照（§15.3.8）是这条风险的正式缓解手段**，不再是待确认项。冷缓存耗时仍待补测。
+  > **已由 §15.6 二次勘误回应：** `ICTRP_TIMEOUT` 现已存在（默认 120s），重试与空消息修复随重新 vendoring 一并对齐；服务侧 120s 仍大于编排器 60s，原始判断成立。**随包快照（§15.3.8）仍是门户不可达时的正式兜底**，不再是待确认项。冷缓存耗时仍待补测。
 - **已定：`overlapWith` 同时含 `chictr` 与 `clinicaltrials_gov`。** 15.5 合并规则 1、2 已分别规定这两种重叠的保留方向，描述符据此填写，不再待确认。剩余待定的是「重叠合并是否需要单独的 UI 可见性提示」，不阻塞实现。
 - **用户手工配置的 MCP 与内置来源并存时的重复计数风险 —— 已裁决（2026-10-04），规则如下，不再是待确认项。**
   **用户原话：** 「写进 spec：不进扇出，检测到重叠就提示」。
@@ -1053,3 +1104,1199 @@ type SourceResultV2 = {
   3. **提示不得静默。** 不得只在设置页角落显示；用户在该来源产生结果时必须能看到。
   **理由（保留以备复核）：** 重复计数的后果不是「多显示几条」，而是把 §15.9 第 5 条承诺的**「条数是下界」变成上界**——用户据此判断「只有 3 个试验」时可能是错的。内置通道的设计前提是「编排器知道每个来源的契约」，手工通道没有这个前提，因此二者必须在数字层面就分开，而不是靠用户自己记住。
   **不在本节范围内：** 是否给手工 MCP 也做「来源」抽象（即让用户手工通道获得与内置同等的契约保证）。那是一个独立的产品决策，需要先定义「用户手工声明的来源描述符」规范，本 SPEC 不做。
+
+### 15.13 宿主侧扇出实现（2026-10-04 实现轮，切片 1–2）
+
+本节记录 §4.1/§4.2/§6.2 落地为代码时的**已实现形态与实测事实**，与 §15.10 的「预期改动范围」互为补充：那一节写意图，本节写事实。
+
+**新建 `apps/desktop/electron/main/trial-sources.ts`（来源描述符注册表）**
+
+- 五个描述符，键序与 §5.2 的按序键一致：`clinicaltrials_gov / chictr / veeva_ctv / chinadrugtrials / who_ictrp`。
+- **每个 `toolName` 都从真实工具读出，不是照抄文档。** 实测结论（本轮逐一核对工具自身的 `inputSchema`）：
+  | 来源 | pluginId | serverId | 工具 | 真实参数 |
+  | --- | --- | --- | --- | --- |
+  | clinicaltrials_gov | `xyb.trials` | —（agentTool） | `xyb_trials_search` | `{ condition, terms }` |
+  | chictr | `xyb.trial-sources` | `chictr` | `search_trials` | `{ keyword, max_results }` |
+  | veeva_ctv | `xyb.trial-sources` | `veeva-ctv` | `search_studies` | `{ keyword, limit, offset }` |
+  | chinadrugtrials | `xyb.trial-sources` | `chinadrugtrials` | `search_trials` | `{ keywords, max_pages }` |
+  | who_ictrp | `xyb.trial-sources` | `who-ictrp` | `ictrp_search` | `{ keyword, limit, offset }` |
+- **CDE 的参数形状是本轮抓到的第一个真错误。** 初版按直觉把 CDE 也写成 `keyword_limit_offset`，实际它的工具收的是 `keywords`（复数、逗号分隔）与 `max_pages`（页数，每页约 10 条），**没有** `keyword`/`limit`/`offset`。因此 `argShape` 新增取值 `keywords_pages`，且 `max_pages` 由 `ceil(defaultLimit / 10)` 派生以免低于 `defaultLimit`。测试 `never emits a parameter the target tool does not declare` 把五组真实 schema 写成白名单，专门拦这一类「形状名复用导致参数名错位」的 bug。
+- `childToolName()` 产出子派发的完整工具标识，规则与 `pluginToolName`/`pluginMcpToolKey` 一致（`packages/plugin-sdk/src/index.ts:2040-2049`）：MCP 型为 `plugin_<pluginId>_<serverId>_<toolName>`，agentTool 型为 `plugin_<pluginId>_<toolName>`。
+- **`sideEffect` 全为 `none`。** CDE 虽是 `archived_scrape`，扇出内只读随包归档；它的写盘路径（`sync_incremental`）在本注册表里**不可达**，符合 §4.3。
+- `dispatchOrder()` **由 `timeoutMs` 降序派生 LPT 顺序**（见 §15.6 订正），而非沿用注册表顺序。测试同时断言「ICTRP 第一」与「期限非递增」，并用有界并发调度模拟断言墙钟 `== 60s <= 75s`。
+
+**新建 `apps/desktop/electron/main/trial-orchestrator.ts`（终态判定与聚合，纯函数）**
+
+- `terminalise(source, outcome)` 把一次派发结果压成 §5.2 的九个终态之一。判定优先级：`userDisabled` → `needsSetup` → `toolRegistered === false` → `denied` → `overallDeadline` → `cancelled` → `timedOut` → `challenge` → `error` → 空结果 `NO_RESULTS` / 有结果 `SUCCESS`。
+- **`toolRegistered === false` 必须显式比较，不能写 `!outcome.toolRegistered`。** 这是实现时踩到的真 bug：写成 `!x` 会把「broker 没上报该字段」也当成「工具缺失」，于是所有后续分支永远不可达，`{timedOut:true}` 会被报成 `TOOL_UNAVAILABLE`。修复后 23 条契约测试全绿。**教训与 §15.10 的工具数勘误同源：默认「未上报」不等于「上报为否」。**
+- **`attempted` 的语义**：派发一开始即为 true，与结果无关。未派发（工具缺失 / 被拒 / 整体期限先到 / 被取消）一律 false。
+  **它是单向的，不要当成 `state !== "NOT_QUERIED"` 的同义词。** 实测全部终态的交叉关系：
+
+  | `attempted` | 状态 | 含义 |
+  | --- | --- | --- |
+  | `false` | `SUCCESS` / `NO_RESULTS` | **真的问到了答案**（强于「没问」） |
+  | `false` | `NOT_QUERIED` / `NOT_ENABLED` / `NEEDS_SETUP` | 没有派发：我们没问 / 用户关了 / 环境没就绪 |
+  | `true` | `TIMEOUT` / `CHALLENGE_REQUIRED` / `FAILED` | 派发了但没拿到答案 |
+
+  因此把 `false` 读成「没问」在 `NEEDS_SETUP` 与 `NOT_ENABLED` 上偏离原意，
+  把 `true` 读成「有数据」在三个失败态上偏离原意。**`attempted` 回答的是
+  「这次派发有没有开始」，它既不回答「用户会不会拿到数据」，也不回答「我们有没有问过」。**
+- **结果形状刻意与既有 F2 契约对齐**（`resources/plugins/xyb.trials/lib/unified.js` 的 `statuses`/`coverage`/`completeness`/`totalRecords`），而不是另起一套字段名。同一事实两种拼写正是「UI 与测试互相矛盾」的来源。三层语义保持分离：`coverage` 说**查了哪几处**，`completeness` 说**拿到的数字是什么性质**。
+- `NO_RESULTS` 的措辞按 `kind` 分叉：`local_index` 说「本地索引中未找到；不等同于没有相关研究」，`archived_scrape` 说「随包归档中未找到；归档只覆盖已抓取的病种与时间范围」。这正是 §5.2 末段对 Veeva 的要求，在此统一实现。
+
+**扇出容量（回答「为什么 §15.6 的并发 4 兑现不了」）**
+
+`crates/host-core/src/tool_budget.rs` 的准入是四把信号量（total + class + session + 会话内 mutation）。复合工具自身是 `plugin_*` → `Plugin` 类，**在整段扇出期间持有自己的 1 个 session 许可与 1 个 plugin 类许可**。原常量 `MAX_IN_FLIGHT_PLUGINS = 4`、`MAX_IN_FLIGHT_PER_SESSION = 4` 意味着剩下只够 **3** 个子调用真并发；第 4、5 个子调用会进入排队，等满 `TOOL_QUEUE_WAIT_MS = 30_000` 后以 `AdmissionError::QueueWaitTimeout`（`code = "HOST_OVERLOADED"`，message「host tool capacity did not become available in time」）失败。**这会掩盖真实的单来源超时原因**，违反 §3.4 第 8 条「必须说明真实原因」。
+
+**用户裁决（2026-10-04）：保留 Electron 薄 broker，把这两个常量抬高到 6**（父 1 + 子 5）。已改：`MAX_IN_FLIGHT_PLUGINS: 4 → 6`、`MAX_IN_FLIGHT_PER_SESSION: 4 → 6`，注释写明是为试验扇出定尺。新增回归测试 `admits_a_parent_plugin_call_and_its_five_fanout_children` 断言父调用 + 5 个子调用全部拿到许可、`snapshot.queued == 0`。同时 `apps/desktop/test/xyb-trials-registry.test.mjs` 会**从 Rust 源码里解析这两个常量**并断言 `>= FANOUT_CHILD_COUNT + 1`——两侧被钉在一起，抬高常量不会再被忘记。
+
+**已验证**：`cargo test -p host-core` → 672 passed / 0 failed；`node --test test/xyb-trials-registry.test.mjs` → 15/15；`node --test test/xyb-trials-orchestrator.test.mjs` → 23/23。
+
+### 15.14 宿主侧扇出实现（切片 3：broker、适配器、UI 与重叠提示）
+
+**新建 `apps/desktop/electron/main/trial-fanout.ts`（薄 broker + 复合工具适配器）**
+
+broker 必须**薄**：它不决定有哪些来源、叫什么、参数是什么——那些全属注册表。这样被污染或被误导的调用方无法拓宽扇出。
+
+- **必须走 `tools.execute`，不能直调 `RegisteredPluginTool.execute` / `McpServerClient.callTool`。** 后者会跳过四件事：权限门、会话授权、准入预算、审计记录。这是 §4.2 存在的全部理由。
+- `interpretDispatchResult(source, result)` —— **核心发现：host-core 的权限拒绝与准入拒绝都是正常 result 里的 `ok:false` + `errorCode` + `denied`，不是 JSON-RPC error**（`crates/host-core/src/rpc/mod.rs:3740-3768` 的 denied_result、`:3780-3805` 的 admission 拒绝分支）。**只用 `try/catch` 包住派发的调用方会看到五个「成功」，并把拒绝渲染成空结果集**——即 2026-10-03 误标的翻版。映射表：`denied===true` 或 `TOOL_DENIED` → `{denied:true}`；`TOOL_ABORTED`/`TOOL_TURN_CANCELLED` → `{cancelled:true}`；`TOOL_TIMEOUT` → `{timedOut:true}`；`TOOL_NOT_FOUND` → `{toolRegistered:false}`；`HOST_OVERLOADED` → 保留真实文本（不得改写成超时）；`PLUGIN_DISABLED_IN_PLAN` → `{denied:true}`；未知码 → `{error, reasonCode:code}`；缺 result 对象 → **失败而非空成功**。
+- `detectChallenge(content)` —— 挑战页是 HTTP 200，无法用状态码识别；§5.2 明写 `CHALLENGE_REQUIRED` **永不绕过**。识别 `challenge===true` / `challengeRequired===true` / `code|errorCode === "CHALLENGE_REQUIRED"|"SOURCE_CHALLENGE"`。
+- `extractRecords(content)` —— 读 `records|trials|studies|results|items|data` 任一数组；`total|count|totalCount === 0` 是真零；**其余形状一律 throw**。把「我不懂这个响应」变成「没有结果」是危险的默认值。
+- `runFanout({sources,dispatch,deadlineMs,concurrency,now,isCancelled})` 四条保证：①同一复合内来源绝不派发两次；②整体期限只阻止**开始新工作**（已开始的报 `TIMEOUT`，从未开始的报 `NOT_QUERIED` + `OVERALL_DEADLINE`）；③迟到结果绝不重写已返回的结论；④每个注册来源恰好一个终态。`concurrency` 取自注册表而非调用方。
+- `createFanoutBroker({resolveTool,dispatchChild,enabledInProject,isCancelled,now})`：`resolveTool` 从**实时**目录回答（§4.2 要求派发前重查存活），缺则 `{toolRegistered:false}`；`enabledInProject(pluginId)` 为 false 则 `needsSetup:true` + `reasonCode:"PLUGIN_NOT_ENABLED"`（**不是** `NOT_ENABLED`——前者是「没配好」，后者是「用户关掉了」，混用会让用户以为是自己关的）；子 `toolCallId` = `${turnId ?? sessionId}:trial:${source.key}`（唯一）。
+- `runTrialComposite({...})` 是 Electron `plugins.execute` handler 的适配器。放在本模块而非内联在 handler，是为了让「目录检查 → 归因 → 派发 → 聚合」整条路径**无需 host 进程即可测试**，handler 只留传输职责。导出 `TRIAL_COMPOSITE_TOOL = pluginToolName(TRIAL_PLUGIN_ID, "xyb_trials_fanout")` 与 `isTrialCompositeTool(fullName)`。**必须用 `pluginToolName()` 推导，不得手写字符串**（§15.20）。
+- `normalizeQuery(args)` 同时接受 `keywords`/`keyword`/`q` 与 CT.gov 的 `condition`/`terms` 对——模型会自然复用它在某个来源见过的形状。**空查询直接拒绝**：五次空查询就是五次浪费的网络调用加五行误导性「0 条」。
+
+**归因（用户必须看清是哪个子来源在请求审批）**
+
+子调用带唯一子 `toolCallId`，并在派发**之前**调 `onChild(source, childToolCallId)` 预注册 `parentToolCallId`/`agentName`。测试断言首个 `dispatch` 之前的顺序里已有 `attribute`，且 attribute 与 release 各 5 次（保证 map 不泄漏）。依据：`apps/desktop/electron/main/index.ts:633` 的 `activeToolCalls` 与 ADR 0062。
+
+**手工 MCP 重叠检测（用户 m00796 裁决：「写进 spec：不进扇出，检测到重叠就提示」）**
+
+- **一律不进扇出**（依据 §6.2 第 3 条）：参数形状、返回契约、条数语义未知，无法终态化；内置契约「失败永不返回 0 条」对外来服务不成立。
+- 但**重叠必须被检测并显示**——两条链路彼此不去重，合并计数会悄悄从下界变成上界。**静默才是失败模式，不是重复。**
+- `trial-sources.ts` 新增 `normalizeServerId(value)`（小写 + 去掉所有非 `[a-z0-9]`，使 `Veeva-CTV`/`veeva_ctv`/`veeva ctv`/`veevaCtv` 全部命中）、`BUILTIN_SERVER_IDS`、`detectManualOverlaps(manualTools)`。**同 serverId 是强信号；工具名撞上某内置来源自己的 `toolName` 是弱信号但仍上报**（跨不同 server 名时，模型会把它读成同一能力）。命中即 `break`，只报一次。
+- 贯穿到结果：`aggregate({..., manualOverlaps})` 的返回值新增 `overlaps`；`runTrialComposite` 新增 `manualTools` 选项；`apps/desktop/electron/main/runtime/host.ts:265-271` 用 `userMcp.listRecords()` 喂入（`listRecords()` 是唯一能拿到「用户配置了哪些 server id」的入口，而重叠正是关于**已配置**的 server id）。
+- 提示文案不得静默、不得折叠进覆盖率句子里。
+
+**UI 覆盖面板（`apps/desktop/resources/plugins/xyb.trials/views/trials.html`，256 → 450 行）**
+
+§5.2 要求同时呈现四件事，缺一件用户就会把「查了 3 处」读成「一共就这么多」：①coverage 句；②completeness 句；③WHO ICTRP 双数字（实得行数与上游自报总数分开显示，绝不合并）；④WHO 归因与处理日期（条款 4.b(1)/4.b(3)）。
+
+- `coverage-go` 按钮此前**没有任何 handler**（纯装饰）——已接线到新增的 `doCoverage()`。
+- `doCoverage()` 调 `bridge.invoke("xyb.trials.unify", { query:{keywords,condition:"pancreatic cancer"}, sourceResults:{} })`。**面板本身只能直连 CT.gov**，其余来源由助手按序调用各自渠道工具，所以这里如实报出四源 `NOT_ENABLED`，而不是假装查完了五处。
+- `doSearch()` 开头调 `clearCoverage()`，防止上一次的覆盖面板被读成这次检索的覆盖。
+- WHO ICTRP 块：只要该源 `SUCCESS`/`NO_RESULTS` 就展示两个数，当 `upstream > matched` 时补一句「相差 N 条，未取到的部分不代表不存在」；归因块附 WHO 官方条款链接。
+- **发现两个 UI 引用了不存在的字段并补齐**：①`ictrp.processedAt` —— 实际字段是 provenance 的 `ictrp_export_date`，已在 `lib/unified.js:237` 的 `sourceStatus()` 里新增 `processedAt` 原样透传，**缺失留空、不编造、也不用抓取时间顶替**（那是「我们何时取的」，不是「WHO 何时处理的」）；②`res.overlaps` —— 由上述重叠检测提供。
+- 新增 CSS `.lower-bound`（下界披露块的醒目样式）、`.attribution`、`.overlap-warning` 与 markup `#overlap`；渲染函数 `STATE_ZH`/`SOURCE_ZH`/`sourceName`/`stateName`/`clearCoverage`/`renderCoverage`/`renderOverlap`。
+
+**测试（新增 4 个文件，共 21 + 23 + 33 + 13 = 90 条）**
+
+`xyb-trials-registry.test.mjs`（21）、`xyb-trials-orchestrator.test.mjs`（23）、`xyb-trials-fanout.test.mjs`（33，含 4 条 `runTrialComposite` 端到端「接缝」测试）、`xyb-trials-ictrp.test.mjs`（13）。+4 条 integration 覆盖的是接缝而非零件：按解析出的目录名派发全部五个子调用、归因在派发之前注册且之后释放、`keyword` 与 `condition`/`terms` 两种形状都收且拒绝空查询、目录里消失的工具不派发。
+
+**门禁（本轮实测全绿）**：`node --test test/*.test.mjs` → 3360/3360（59.4s，exit 0）；`cargo test -p host-core` → 672 passed / 0 failed；`xyb-check-plugins.mjs` 6/6；`xyb-check-plugin-api.mjs` 13 API 完好；`xyb-check-plugin-contract.mjs` 6/6；`check-architecture.mjs` passed（New TS/TSX files checked: 14）；`npx tsc --noEmit -p tsconfig.json` 无输出。
+
+**`runFanout` 的返回顺序是一处刻意的契约分界**：调度器按**派发顺序（LPT）** 返回，`aggregate` 负责恢复注册表序。分开才能让排程变化不影响用户可见的结果形状。（实现时曾把两者混为一谈，测试按注册表序断言 `runFanout` 而失败。）
+
+**vendoring 漂移的第二次实测（2026-10-05）**
+
+本轮 `xyb-check-ictrp-vendor.mjs --upstream` 又抓到两处漂移：`data/normalize.py` 与 `tools.py`。上游新增了 `line_of_therapy_hint`（从自由文本「纳入/排除标准」派生治疗线提示，`normalize.py` 的 `_LINE_PATTERNS` 同时匹配中英文标记）与扩充后的 `DEFAULT_FIELDS`（补 `scientific_title`/`primary_sponsor`/`secondary_sponsor`/`contact_*`/`inclusion_age_*`/`inclusion_gender` 等）。上游 `npm/sidecar/vendor/` 与 `src/` 两份副本 sha256 一致，故照旧以 npm 副本为准重新 vendoring，门禁转绿，工具数仍为 **9**（`server.py` 未变）。
+
+**这次漂移暴露了一个随包瘦身与派生字段之间的真陷阱，值得单独记下来：**
+
+- 随包种子（§15.3.8）按 `ICTRP_KEEP_FIELDS` 瘦身，裁掉的正是自由文本标准列（`inclusion_criteria`/`exclusion_criteria` 等，原稿里它们占 12.80MB + 2.11MB）。而 `line_of_therapy_hint` **恰好**是从那些文本派生的。
+- 更关键的是：离线路径 `cache/store.py:191 adopt()` 是**原样采纳 `snapshot.trials`**，**不做** `data/normalize.py` 的 `to_trial()` 归一化（实时路径在 `cache/store.py:156` 与 `:278` 才调 `to_trial`）。所以离线查询 `fields=["line_of_therapy_hint"]` 会返回 **`None`**，而**不是**字段缺失。
+- 上游 docstring 对 `None` 的定义是明确的：「it means "not stated in the criteria we hold", which must not be read as "first-line" -- the export is incomplete and the column does not exist.」**但一个名为 `line_of_therapy_hint` 的字段在所有 6262 条记录上整齐地为 `None`，极易被模型读成「这些都是一线/未经治疗」**——这会从「数据缺失」直接推出「临床结论」，而且方向恰好是错的（真实分布里相当一部分是经治患者）。
+- **处理**：①`snapshot.field_note` 明确写出自由文本列未随包、`line_of_therapy_hint` 与 `carries_results_data` 因此缺席或为 `None`、且**不得反推**为 first-line/treatment-naive；②生成器 `scripts/xyb-sync-trial-json-seeds.mjs` 同步写入该说明，重跑不会把它擦掉；③测试 `apps/desktop/test/xyb-trial-seeds-redline.test.mjs` 新增一条断言把「说明必须存在」与「数据里确实一条都没带该字段」钉在一起。
+- **教训（与本 SPEC 已有的两条同源）**：「默认未上报 ≠ 上报为否」（§15.13 的 `toolRegistered === false` bug）、「不存在的旋钮要绑定 vendoring 版本」（§15.6 二次勘误），现在是第三条——**「字段存在但恒为空」是一种比「字段不存在」更危险的形状，因为空值看起来像一个答案。** 派生字段与喂给它的原始列必须同进同出，否则就该显式声明该字段不可用。
+
+**仍未实现（据实登记）**
+
+- ~~`apps/desktop/test` 中「随包种子缺文件即红线」的**自动化**扫描测试（§10 第 6 条）。~~ **已销账 2026-10-05**：`apps/desktop/test/xyb-trial-seeds-redline.test.mjs`（6 条）。
+- ~~`docs/guide/临床新能力接入规范指导.md` 的 Python vendoring 一节。~~ **已销账 2026-10-05**：新增 §3.5（六个小节），并同步 `§0` / `§7.1` / `§7.3` / `§8`。
+- ~~`docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` 中文镜像仍只到 §15.4。~~ **已补 2026-10-05**（204 → 260 行）：新增 **§15.13**（描述符表、LPT 派发顺序与排程论证、工具预算 4→6 的理由）、**§15.14**（broker/调度保证、子调用必须重入 `tools.execute` 的四项理由、归因、`runFanout` 派发序 vs `aggregate` 注册表序的契约分界、完整性、手工 MCP 重叠检测、UI 三件呈现、面板的诚实边界）、**§15.15**（第三个真缺口）、**§15.17**（运行时探测与 `callTimeoutMs`）、**§15.18**（`via WHO ICTRP` 标注）。同时修正两处陈旧陈述（§15.6 派发顺序改为 LPT；§15.12 手工 MCP 重复计数标记已销账）。
+  **仍然欠债**：§15.5–§15.12 在中文侧仍是提纲。**中英镜像一致性**已不再欠债——`scripts/check-spec-mirror-parity.mjs` 自 2026-10-05 起守护四条结构不变量（见 §15.37），但它只查结构、不查译文是否仍表达同一意思，故「提纲仍不完整」这件事仍只能靠人工发现。
+
+### 15.15 第三个真缺口：字段在两端都「有」，中间没有翻译层
+
+**症状**：UI 的双数字（`upstreamReportedTotal` / `matchedRowsReturned`）与 WHO 处理日期（`processedAt`，条款 4.b(3) 要求显示）**在真实链路上恒为 `undefined`**，无论 ICTRP 服务实际报告了什么。
+
+**为什么三方都「看起来」没问题**：每段代码单独读都是对的——
+
+- `apps/desktop/resources/plugins/xyb.trial-sources/mcp/ictrp/ictrp_mcp/tools.py:200-207` 的 `search()` 确实返回 `upstream_reported_total` / `matched_rows_returned` / `provenance`；
+- `apps/desktop/electron/main/trial-orchestrator.ts:177-182` 的 `terminalise()` 确实搬运 `outcome.upstreamReportedTotal` 与 `outcome.matchedRowsReturned`；
+- `apps/desktop/resources/plugins/xyb.trials/lib/unified.js:237` 确实透传 `processedAt`，且注释写明「缺失时留空——不编造，也不用抓取时间顶替」；
+- `apps/desktop/resources/plugins/xyb.trials/views/trials.html:310-355` 确实渲染这三个值。
+
+**缺口在中间**：`apps/desktop/electron/main/trial-fanout.ts` 的 `interpretDispatchResult()` 从子调用载荷里只读了 `truncated`，**从未读过服务真实发出的 snake_case 键**（`upstream_reported_total` / `matched_rows_returned` / `provenance.ictrp_export_date`），也**从未把 WHO 处理日期写进 `SourceOutcome`**（该类型此前根本没有 `processedAt` 字段）。于是：
+
+```
+服务说 upstream_reported_total=6952
+  → interpretDispatchResult 只取 truncated
+  → outcome.upstreamReportedTotal === undefined
+  → terminalise 搬运 undefined
+  → UI Math 渲染 "未报告"
+```
+
+**为什么既有测试没抓到**：`xyb-trials-ictrp.test.mjs:48-49` 与 `xyb-trials-orchestrator.test.mjs:126` 都是**把 camelCase 字段直接注入 outcome**（`ok([...], { upstreamReportedTotal: 6952 })`）。它们验证了 `terminalise` 的算术，却把「谁生产这些字段」整段跳过了——测试与实现共享了同一个未经验证的假设。
+
+**第二个更隐蔽的层**：即便补上 snake_case 翻译，仍会在生产环境失效。`plugin-mcp.ts:586` 的 `callTool()` 返回**原始协议结果** `{content:[{type:"text",text:"<json>"}], isError}`，而插件自注册工具（如 `xyb_trials_search`）返回结构化对象。两者走同一条 broker 入口。原有 `extractRecords()` 只认 `records`/`trials`/… 这些**顶层**键，对 MCP 包装层会抛 `unrecognised envelope`——一个健康的渠道会长着一张空结果的脸。
+
+**处置**（`apps/desktop/electron/main/trial-fanout.ts`）：
+
+1. 新增 `unwrapToolContent(content)`——剥掉 MCP `TextContent` 包装（单块与多块均可，多块按 `describeMcpContent` 的方式换行连接后解析）。**刻意浅且非破坏性**：已是结构化的载荷原样通过；解析不出 JSON 的纯文本**原样保留**，不自作主张变成 `{}`（把解析失败洗成空结果，等于把「读不懂」伪装成「没有」）。
+2. `lowerBoundEvidence(source, content)` 把 snake_case 翻成 camelCase。三条刻意的性质：
+   - **只对声明的下界来源生效**（`isUpstreamIncomplete`）。行集并非系统性短缺的来源，其计数就只是计数；把它显示成下界会**低估一个完整答案**。
+   - **缺数字留 `undefined`，绝不写 0**。「没有这个数字」与「数字是 0」是两个断言（§5）。
+   - **WHO 日期原样取自 `provenance`，绝不回退到 `Date.now()`**——那是「我们何时取的」，不是条款 4.b(3) 要求用户看到的事实，且它会显得权威而其实是错的。
+3. `SourceOutcome` 与 `SourceConclusion` 各增 `processedAt?: string`；`terminalise()` 在 `isUpstreamIncomplete` 分支内搬运它。
+4. `extractRecords()` 也先过 `unwrapToolContent()`。
+
+**测试**（净增 10 条，全绿；`apps/desktop` 3377/3377）：
+
+- `apps/desktop/test/xyb-trials-fanout.test.mjs`（41 条）：真实 snake_case 载荷下两个数字存活、WHO 日期取自 `provenance` 而非抓取时间、缺日期留 `undefined` 且不影响两个数字、**非聚合来源不得沾上这两个键**、记录能从 MCP `TextContent` 块里取到、两个数字与日期能穿过 `TextContent` 包装、**纯文本答案必须抛错而不是被静默清空**、结构化插件结果原样通过。
+- `apps/desktop/test/xyb-trials-orchestrator.test.mjs`（25 条）：端到端——真实 ICTRP 子调用结果经 `interpretDispatchResult` → `terminalise` → `aggregate`，断言三个值都活着到达 `statuses[]`，且 `completeness.countsAreLowerBounds === true`；另一条断言缺日期时两个数字仍照常上报。
+
+**教训（第四条，与前三同源）**：「默认未上报 ≠ 上报为否」（§15.13）、「不存在的旋钮要绑定 vendoring 版本」（§15.6 二次勘误）、「字段存在但恒为空」（§15.14）、现在是——**「两端都有这个字段」不等于「它们说的是同一个字段」。契约的断裂点常在中间那层没人测试的翻译代码里；而组件测试若与被测代码共享同一个未验证假设（把 camelCase 直接注入 outcome），它验证的只是下半截。**
+
+**推论（给未来的接入者）**：新增一个跨进程/跨语言的来源时，必须有一条测试**从服务真实发出的字节开始**（真实的键名、真实的包装层），而不是从内部类型开始。`unified.js` 的透传注释与 `tools.py` 的返回键都「正确」，正因为各自都正确，缺口才无人看见——**正确的一半 + 正确的另一半 ≠ 正确的整体**。
+
+### 15.16 归属必须落在记录上，不能只落在汇总行
+
+**发现的缺口**：`trials.html` 的 `render()` 渲染每条试验卡片时只显示编号、状态、分期、地点与更新时间——**从不显示该记录来自哪个来源**。`normalizeRecord()` 明明输出了 `source` 与 `sourceUrl`，面板把两者都丢掉了。同时卡片只读 `it.url`，而归一化后的记录用的是 `sourceUrl`，于是「查看原始登记信息」链接对每条归一化记录都是静默消失的。
+
+**为什么这是缺陷而不是美观问题**：WHO ICTRP 条款 4.b(1) 要求 *"attribute the source of the data as WHO ICTRP"*——这是一项**必须执行**的义务（§15.7）。在一份合并清单里，一条经聚合库来的试验与一条从一手登记库直接取来的试验长得一模一样时，归属就只在汇总区出现，而用户看的是记录。**归属声明必须附着在被归属的对象上。**
+
+**处置**：`render()` 的卡片新增来源行（`it.source` → `sourceName()`，中文前缀「来源：」，样式 `.meta.source` 用 `--ink` 以示它比其它 meta 更重）；链接读取改为 `it.sourceUrl || it.url`，两个字段名都认。
+
+**顺带抓到的一处**：新写的 `.meta.source` 一开始用了 `var(--fg)`，而该变量在本面板**根本不存在**（真实变量是 `--ink` / `--body` / `--muted` 等）。CSS 自定义属性没有声明即静默失效，颜色会退化成继承值——**又是一个「不报错但不对」的形状**，与 §15.15 同源。因此新增一条测试枚举面板用到的所有 `var(--…)` 并断言每一个都有定义（`--pi-plugin-titlebar-height` 由宿主注入，显式豁免），并做了反向自证：注入一个 `--nonexistent` 应使该测试失败。
+
+**测试**（`apps/desktop/test/xyb-trials-ui-vocabulary.test.mjs`，7 条）：面板翻译了宿主编排器能发出的每一个状态；面板翻译了插件聚合器能发出的每一个状态；`NOT_QUERIED` 与 `FAILED` 的中文名必须不同（「没问」不是「坏了」）；两个后端在共享状态上拼写一致；记录卡片必须用 `sourceName()` 标出来源；卡片链接必须兼容 `sourceUrl` 与 `url`；面板用到的每个 CSS 变量都必须有定义。
+
+### 15.17 运行时探测：把「没问到」和「没法问」分开
+
+**缺口（§15.9 第 2 与第 3 条的边界）**：`PYTHON_RUNTIME_MISSING` / `PYTHON_DEPS_MISSING` 这两个原因码此前**只存在于本合同与测试文本里**，没有任何生产代码会发出它们。真实链路是：`python3` 不存在 → MCP 服务器起不来 → **它的工具从未注册** → 子调用命中 `NOT_FOUND` → `toolRegistered: false` → `NOT_QUERIED` + `TOOL_UNAVAILABLE`。
+
+这个答案**是真的，但没用**。它说「这个工具在目录里不存在」，而用户需要听到的是「Python 不在，请运行这一行」。§15.9 把二者明确分成第 2 条与第 3 条，正是因为**修复动作不同**。
+
+**为什么必须重新探测而不是读失败信息**：到派发失败的那一刻，原因已经消失了。服务器没有留下任何痕迹说明它为什么没启动，只有一个空目录。所以「目录里没有」与「本可以注册但环境不满足」在观测上**完全同形**，只能重新推导。
+
+**处置**：
+1. 新增 `apps/desktop/electron/main/trial-runtime.ts`，按 §15.3.5 的顺序探测：`python3 --version` ≥ 3.10 → `python3 -c "import mcp, httpx"`。**在第一个 `missing` 处停止**——一台没有 Python 的机器上，后续探测也会失败，继续跑只会报到最后一个失败上，把用户送去为一个他根本没有的解释器装 pip 包。
+2. 描述符新增 `requiresRuntime: "python3"`（目前只有 `who_ictrp`）；broker 新增可注入的 `probeRuntime`，**只在该来源的工具缺席时**调用。工具在场时不探测：一次探测要起一个进程，而它只在「缺工具」这条路径上有意义。
+3. `SourceOutcome` / `SourceConclusion` 新增 `fixCommand`，经 `terminalise` 搬运，供 UI 直接给出一行可复制命令（第 3 条要求）。
+
+**三条刻意性质**：
+- **`unknown` 绝不提升为 `missing`**。探测超时、输出不像 Python、解释器不可用导致依赖无法检测——这些都返回 `unknown`，然后**照旧报 `NOT_QUERIED`**。让人去安装他已经装好的东西，比什么都不说更糟，而且会掩盖真正的病因。反向自证：把 `probe.status === "missing"` 改成 `probe.status !== "ok"`，「无法判定」那条测试立刻失败。
+- **`ok` 不等于「注册失败与运行环境无关」**，它只表示「前置条件满足，因此工具缺席另有原因」。
+- **`VENDOR_FILES_MISSING` / `SOURCE_LAUNCH_FAILED` 保持保留状态**：`RUNTIME_REASON_CODES` 声明了它们以便消费方共享同一拼写，但本模块不做随包树校验与进程启动，因此**不发出**它们——发出一个没做过对应检查的诊断就是在编造病因。
+
+**测试**：`apps/desktop/test/xyb-trials-runtime.test.mjs`（14 条，注入 `CommandRunner`，不启动真实进程）覆盖版本解析与拒绝猜测、版本下限的等于/低于/跨主版本、`ENOENT` → `PYTHON_RUNTIME_MISSING` 且修复命令可运行、版本过低与完全缺失的说明文案必须不同、超时是 `unknown` 而非 `missing`、依赖探测不因解释器缺失而改口归咎依赖、探测链在第一步停止（断言只调用了一次）、链路完整与两种失败路径；`xyb-trials-fanout.test.mjs` 新增 6 条覆盖 broker 侧：缺工具才探测、只有声明 `requiresRuntime` 的来源被探测、`unknown` 保持 `NOT_QUERIED`（且不编造 `fixCommand`）、`ok` 仍是 `NOT_QUERIED`、工具在场不探测、`fixCommand` 能穿过 `aggregate`。
+
+**顺带修好的宿主能力缺口（§15.9 第 10 条第一项）**：`ictrp_search` 要求显式携带 `callTimeoutMs = 60000`，但 `packages/plugin-sdk` 的 `PluginMcpServerContrib` **根本没有这个字段**——即清单想声明也声明不了，调用会回落到共享默认 `MCP_CALL_TIMEOUT_MS = 100_000`（`apps/desktop/electron/main/plugin-mcp.ts:17`，与合同所述一致）。处置：SDK 类型新增 `callTimeoutMs?: number`、`validateMcpServer` 拒绝非正整数（`0`/负数/小数/`NaN`/字符串/`null`/对象），`plugin-runtime.ts` 仅在声明存在时覆盖共享默认，`xyb.trial-sources/manifest.json` 的 `who-ictrp` 声明 `callTimeoutMs: 60000`。**只有 who-ictrp 声明**：给 npx 启动的聚合器也放宽到一分钟，只会让一个挂住的 npm 进程多占一个扇出槽位。测试 `apps/desktop/test/xyb-trials-ictrp-timeout.test.mjs`（7 条）另断言声明值与描述符里的 `timeoutMs` **相同**（两处编码同一个数字，漂移会让编排器按一个客户端并不遵守的超时算总期限），以及它与共享默认**不同**（若相等，这条声明就什么都没改变，测试也就没在守护任何东西）。
+
+**修 SDK 类型后必须重建 `packages/plugin-sdk/dist`**（`cd packages/plugin-sdk && ../../node_modules/.bin/tsc -p tsconfig.json`），否则 `apps/desktop` 的 `tsc` 会报 `TS2339: Property 'callTimeoutMs' does not exist on type 'PluginMcpServerContrib'`——消费方读的是 `dist/*.d.ts`，不是 `src`。`dist/` 未被 git 跟踪。
+
+### 15.18 来源标注要写出「经谁收录」，而不只是「是哪个来源」
+
+**缺口（§15.9 第 6 与第 9 条）**：`mergeGroup()` 早已输出 `primarySource` 与 `mergedFrom`，权威序也早已让 ChiCTR 直连版保留为主记录——但「ICTRP 版本标注为『ChiCTR via WHO ICTRP』」这句要求**只存在于注释里**，没有任何代码产出这段文案。用户看到的合并记录只有「来源：WHO ICTRP」，而这既丢失了「同一试验另有一手来源」这一事实，又会让人以为这条试验是 WHO 自己登记的。
+
+**为什么 `mergedFrom` 不够**：它记录的是**哪些**来源贡献了记录，但没说这些来源之间**是什么关系**。决定「该去哪个门户核对更新」需要的是后者：`ChiCTR` 与 `ChiCTR via WHO ICTRP` 指向同一登记号但权威性不同，而 `WHO ICTRP` 单独出现则意味着这条只存在于聚合库里、没有直连版本。
+
+**处置**：新增 `sourceAttributionLabel(primarySource, source)` 与合并记录上的 `sourceLabels: [{source, label}]`，三条规则：
+- 主记录（一手来源）→ 只写自己的名字，**不加 `via`**。给直连版标注 `via` 会把合并规则要保留的关系颠倒过来。
+- 聚合库收录**另一手来源**的登记号 → `「<一手来源> via <聚合库>」`，且**一手来源的名字取自 `SOURCE_OVERLAPS` 而非硬编码**。WHO ICTRP 同时收录 ChiCTR 与 ClinicalTrials.gov，写死 `ChiCTR` 会把每一条 NCT 记录都标错。
+- 与在场一手来源无重叠关系的来源 → 不加 `via`（`SOURCE_OVERLAPS` 未声明的关系不得凭空发明）。
+- 未知 key 回退为原始 key，**不返回空串**——空白标签会让记录看起来没有来源。
+
+面板侧 `render()` 优先渲染 `sourceLabels`，仅在缺失时才回退到 `sourceName(it.source)`。
+
+**测试**：`apps/desktop/test/xyb-trials-ictrp.test.mjs` 新增 6 条（聚合库版标注、直连版不加 `via`、实际一手来源取自数据而非硬编码、无重叠关系不加 `via`、未知 key 回退、合并记录为每个来源都给出标签且 `primarySource` 仍为 `chictr`），`xyb-trials-ui-vocabulary.test.mjs` 新增 1 条断言面板渲染的是 `sourceLabels` 而非裸 key。反向自证：把 `via` 分支短路后，三条测试如期失败（16、18、22），还原后 22/22。
+
+**一处测试自身的错误（值得记下）**：我最初断言 `sourceAttributionLabel("clinicaltrials_gov", "who_ictrp")` 应为 `"WHO ICTRP"`，测试失败了——**是断言错了，不是代码错了**。`SOURCE_OVERLAPS.who_ictrp` 确实包含 `clinicaltrials_gov`，所以 `"ClinicalTrials.gov via WHO ICTRP"` 才是正确结果。教训：测试写出的期望值也是断言，它同样可能把「我以为的规则」当成「代码里的规则」；失败时先读代码确认哪一侧错了，不要为了让测试变绿而改代码。
+
+### 15.19 第四个真缺口：单条记录的夹具让「解信封」与「不解信封」无法区分
+
+**症状**：`apps/desktop/electron/main/trial-fanout.ts` 的 `extractRecords()` 第一行是
+
+```js
+if (Array.isArray(content)) return content;
+```
+
+而 MCP 工具的返回值**本身就是数组**——`plugin-mcp.ts` 的 `callTool()` 交回原始协议结果
+`{content: [{type: "text", text: "<真正的载荷 JSON>"}], isError}`。于是对**每一个** MCP 来源，
+`extractRecords()` 都在解信封之前就把那个长度恒为 1 的包装数组当成了记录列表返回。
+
+后果：`chictr` / `veeva_ctv` / `chinadrugtrials` / `who_ictrp` 四个 MCP 来源
+**无论实际返回多少条，都只上报 1 条记录**。这不是一个来源失败，而是四个来源同时
+把「多少条」这个问题答成了 1——一个看起来完全正常、且小到不会被怀疑的数字。
+
+**为什么 3422 条测试一条都没抓到**：`xyb-trials-fanout.test.mjs` 的 `ictrpPayload()` 夹具里
+`trials` **只有一条记录**。当包装数组的长度恰好等于正确记录数时，
+「返回包装数组」与「返回信封里的记录」**结果相同**——测试因此对实现里的顺序错误完全免疫。
+它断言的 `assert.deepEqual(outcome.records, [{trial_id: "..."}])` 两种实现都能通过。
+
+这与 §15.15 是同一个形状的第三次出现，但更隐蔽：**夹具的取值让两条不同的代码路径产生了相同的输出**。
+§15.15 的教训是「组件测试与被测代码共享同一个未验证假设」；这一条是
+「**夹具的规模让错误实现与正确实现无法区分**」。
+
+**处置**：
+1. `extractRecords()` 改为**先解包、再判数组**：`unwrapToolContent()` 之后的数组才是真正的裸记录列表；
+   并在代码里写明理由（否则下一个人会为了「更早返回」把这一行挪回去）。
+2. 夹具的 `trials` 从 1 条改为 **3 条**，并在注释里写明为什么必须是多条。
+3. 断言从「包含某条」改为 `assert.equal(outcome.records.length, 3, "必须解出信封里的三条记录，而不是信封本身")`
+   ——**断言数量，而不只是断言成员**。
+4. 反向自证：把 `if (Array.isArray(content)) return content;` 挪回第一行 →
+   `xyb-trials-fanout.test.mjs` 如期失败；还原后 47/47。
+
+**第五条教训**：**只断言「里面有对的元素」，永远抓不到「里面只剩那个元素」。
+凡是被断言的集合，都要同时断言它的规模；而夹具的记录数必须大于 1，
+否则「长度」这个维度在测试里根本不存在。**
+
+### 15.20 第五个真缺口：宿主拦截的是一个「不存在的工具名」
+
+**发现方式**：对抗审计指出「宿主拦截的复合工具与插件自注册工具契约不相容」，
+我按用户要求先查两者的来源与用途，查证时发现真实情况比报告更严重——
+它们**根本不在一个名字上**。
+
+**事实**：
+
+```text
+pluginToolName("xyb.trials", "xyb_trials_unify")
+  → "plugin_xyb_trials_xyb_trials_unify"     # 插件 id 里的点被换成下划线
+TRIAL_COMPOSITE_TOOL（原值，手写字符串）
+  → "plugin_xyb.trials_xyb_trials_unify"     # 点还在
+```
+
+`plugins.getTools()` 用 `pluginToolName()`（`packages/plugin-sdk/src/index.ts:2052`）
+生成目录全名，它把**所有非 `[a-zA-Z0-9_]` 字符替换成下划线**，所以 `xyb.trials`
+里的点在目录里是下划线。`host.ts:255` 却拿手写字符串去比 `q.toolName`。
+
+**后果**：`isTrialCompositeTool()` **在生产环境永远返回 false**。整个宿主扇出——
+状态机、LPT 派发、双数字下界、WHO 条款归因、手工 MCP 重叠检测——
+是一整套**只有测试在跑、生产一次都没执行过**的代码。
+
+**为什么 3400 多条测试全绿**：所有测试都直接调 `runTrialComposite(...)`，
+没有一条问过「宿主到底拿哪个字符串去比对」。**测试验证了函数正确，
+却没有验证函数被调用**——而被调用与否恰恰由那个字符串决定。
+这与 §15.15「契约的断裂点常在中间那层没人测试的翻译代码里」同源：
+这里没有翻译层，断点就是一个字面量。
+
+**处置**（用户裁决：「拆成两个工具名，各归其位」）：
+
+1. `trial-fanout.ts` 新增 `TRIAL_PLUGIN_ID = "xyb.trials"`，
+   `TRIAL_COMPOSITE_TOOL = pluginToolName(TRIAL_PLUGIN_ID, "xyb_trials_fanout")`，
+   并导出 `TRIAL_MERGE_TOOL = pluginToolName(TRIAL_PLUGIN_ID, "xyb_trials_unify")`。
+   **用同一个函数推导，手写字符串这一类 bug 从此不可能重现。**
+2. 插件 `main.js` 新注册 `xyb_trials_fanout`（扇出入口），
+   `xyb_trials_unify` 保持「只合并」不变。两个名字各管一件事：
+   - `xyb_trials_fanout`：调用方给一个关键词，宿主并行查五处；
+   - `xyb_trials_unify`：调用方已自行取数，只做合并去重。
+   宿主**只拦截前者**。
+3. `xyb_trials_fanout` 的 `execute` 直接抛错（并写明「说明宿主拦截未生效」）：
+   它永远不会被调用，但留一个**响亮的失败**远好过一个安静的空清单。
+4. `normalizeQuery` 同时接受 `keywords`/`keyword`/`q` 与 `condition`/`terms`
+   （新增 `firstString()` 辅助）。原实现只认单数 `keyword`，
+   而两个工具 schema 都写 `keywords`——**按 schema 调用会直接抛错**，
+   而抛错在检索工具里看起来和「没有结果」一模一样。
+5. manifest、两份 skill 文档（`skills/unified-trial-query.md`、`skills/who-ictrp.md`）、
+   两份 SPEC 与面板注释同步为两名制；skill 新增「先选路径」表，默认走扇出。
+
+**新增测试**（`xyb-trials-registry.test.mjs` 23 → 27，`xyb-trials-orchestrator.test.mjs` 26 → 28）：
+常量等于 `pluginToolName()` 的产出、等于下划线形、**不含点**、
+`isTrialCompositeTool` 对旧的点形返回 false、两个名字不相等且合并名不被拦截、
+manifest 两个名字都在、`normalizeQuery` 六种输入（含空白串与其他形状拒绝）、
+下界原因码能穿过 `terminalise`→`aggregate`、完整来源仍是 `OK`。
+反向自证：把常量改回手写的点形 → `not ok 24 - the intercepted tool name is derived…` 如期失败；
+还原后 27/27。
+
+**第六条教训**：**「名字」也是契约的一部分，而且是最容易被手写绕过的那一部分。
+凡是必须与另一处推导结果一致的字面量，都应该由那处的函数算出来，而不是抄一遍。
+抄一遍不会报错，只会让比对永远为假——而「永远为假」在测试里表现为一切正常。**
+
+### 15.21 对抗审计的另外四项发现（本轮处置）
+
+1. **`UPSTREAM_RESULT_INCOMPLETE` 无产出**（§15.9 第 4 条只有散文、没有实现）：
+   `terminalise` 对一切带记录的 `SUCCESS` 都给 `reasonCode:"OK"`。已修——该分支
+   （`isUpstreamIncomplete(source.key)`）现在改写成 `UPSTREAM_RESULT_INCOMPLETE`。
+   **这不是失败**，是「降级成功」，所以状态仍是 `SUCCESS`，只是多了一个可分支的原因码，
+   让消费方不必靠「自己比较两个数字」才知道这是下界。
+   新增两条端到端断言：原因码能穿过 `terminalise`→`aggregate`；完整来源仍是 `OK`。
+2. **`apps/desktop/test/xyb-trials-ictrp.test.mjs:223` 是空洞测试**（§15.9 第 7 条）：
+   它把 `explanation: "…（CACHE_WRITE_FAILED）"` 当夹具传入，再断言同一子串。
+   任何 `explanation` 都能通过，而 `CACHE_WRITE_FAILED` 全仓库只此一处、无代码产出。
+   已替换为两条**真正属于本层**的测试：上游附带（与缓存无关的）说明不得被升级成失败；
+   来源自报 `FAILED` 时不得靠说明洗成成功。反向自证：让状态由说明关键词推导 →
+   原测试全绿，新测试如期 `not ok`。**教训同上：断言自己的输入等于什么都没断言。**
+3. **第 10 条第三款（10s 握手界）——已建（2026-10-05），以测量而非配置守护**：
+   先前的困难是真的：`connectTimeoutMs` 是**运行时选项**而**不是 manifest 键**
+   （`packages/plugin-sdk/src/mcp-config.ts:78-86` 只校验 `callTimeoutMs`，
+   `apps/desktop/electron/main/plugin-runtime.ts:393-397` 把它列为注入项），
+   所以「把它写进 manifest」这条路走不通，也就没有可断言的声明面。
+   **改为测量真实链路**：用真实客户端连真实随包服务，冷启动三次分别
+   **1.27s / 1.28s / 1.33s**，对 10s 默认界有约 **7 倍余量**。结论是该款
+   **由测量成立**，需要守护的是这个余量不要悄悄消失。
+   新增断言（`apps/desktop/test/xyb-trials-ictrp-timeout.test.mjs` 第 4 条）：
+   用 `MCP_CONNECT_TIMEOUT_MS` **原值**（不额外放宽）完成一次真实握手，断言
+   成功、目录为 9 个工具、含 `ictrp_search`、且耗时小于该界；解释器缺失时
+   以 skip 报告（环境事实），其余错误照常失败。
+   **反向自证**：把 `MCP_CONNECT_TIMEOUT_MS` 临时改为 1 → `not ok 4`；
+   `cp` 还原后逐字节一致、8/8 通过。
+   **这同时更正了上一版「0.36s」的口径**：那是单次 `initialize` 回复时间，
+   不是整条握手（`initialize` + `notifications/initialized` + `tools/list`）。
+   **把「测过一次」当成「不会变」是另一种把观测放大成结论**——所以这次留的是断言，不是记忆。
+4. **面板路径永不填充双数字块与 WHO 条款块**：面板走 `onPanelInvoke`，只能直连 CT.gov，
+   如实报四源未查询。**这不是缺陷而是诚实边界**（§15.14 已写明），
+   真扇出发生在助手回合。已在面板注释中写清，避免下一个人误以为那段渲染是死代码。
+
+**vendoring 漂移的第三次实测（2026-10-05，`data/normalize.py`）**
+
+门禁再次报出 `data/normalize.py` 与上游不一致。按四步流程处置：
+
+1. **门禁报差异**：`✗ 内容漂移：data/normalize.py（vendored 副本与上游不一致）`。
+2. **读上游 diff 判断是修复还是重构**：上游改动两处——①`derive_line_of_therapy_hint()`
+   新增第三个参数 `scientific_title`，因为治疗线数**常常只写在科学标题里**
+   （如「…Received >=2 Prior Lines of Therapy」）而不在标准正文里；
+   ②新增 `_LINE_NUMBER` / `_WORD_NUMBER` 两个正则解析数字式线数
+   （`>=2`、`2-line`、`二线`），判定为 `later-line` 而非某个具体线数
+   （**因为 N 是下限：`>=2` 意味着二线或更晚，绝不是一线**）。属真修复，不是回归。
+3. **从规范副本覆盖**：`cp .../npm/sidecar/vendor/ictrp_mcp/data/normalize.py`。
+4. **重跑门禁**：`结果：通过（0 项提示）`。
+
+**这次漂移牵出一个必须同步更新的说明**：随包快照按 `ICTRP_KEEP_FIELDS` 裁掉的
+是 `inclusion_criteria` / `exclusion_criteria`，而新代码**还把 `scientific_title`
+作为派生依据**——该字段**在随包快照里**（6262 条中 6221 条有值）。因此
+`snapshot.field_note` 原先那句「派生字段一律缺席」已不精确：正确的说法是
+「**criteria 文本不在随包里，所以即使试验真的写了也可能缺失；scientific_title 在，
+所以标题里明写线数的仍可离线派生**」。生成脚本与种子文件已同步改写，
+红线测试新增两条断言：说明必须提到 `scientific_title` 与 `carries_results_data`，
+且「声称 scientific_title 随包」必须与实际数据一致（`withTitle > 0`）。
+
+**第七条教训**：**上游新增一个派生依据时，要重新检查「我们随包带了哪些列」这个问题的答案。
+上一轮写下的那句「派生字段一律缺席」在当时是真的，在上游改了之后就成了半个谎话——
+而它偏偏是防止模型把「空」读成「一线」的唯一防线。说明文字和门禁一样，
+会随上游漂移而过期。**
+
+### 15.22 第六个真缺口：记录级归属在宿主路径上从未发生
+
+**症状**：`views/trials.html` 的记录卡片写好了三级来源标注（`sourceLabel` →
+`sourceLabels` → `source`），`lib/unified.js` 也实现了
+`sourceAttributionLabel("chictr","who_ictrp")` = 「ChiCTR（…） via WHO ICTRP」
+并有测试覆盖——但**走宿主扇出路径时两个都拿不到值**：卡片会渲染成
+「来源：undefined」。
+
+**因果链**（与前四个缺口同源，都是「两端都有，中间没有」）：
+
+1. 面板的 `it.source` / `it.sourceUrl` 取自归一化记录，而宿主的
+   `aggregate()` 只做了一件事：`statuses.flatMap((s) => s.records)`。
+   **既不合并，也不打标签。**
+2. 各后端的原始行**根本没有 `source` 字段**。对真实 ICTRP 载荷的核对：
+   它用 `trial_id` 作主键（如 `ACTRN12605000026628`），
+   `'source' in trial` 为 **false**。所以 `it.source` 恒为 `undefined`，
+   §15.16 修好的记录级归属在真正会跑的路径上一次都没显示过。
+3. `sourceLabels` 由 `lib/unified.js` 的合并器产出，而它只在
+   `xyb_trials_unify`（只合并、不取数）路径上运行；扇出路径
+   (`xyb_trials_fanout`) 直接拿后端的原始行，从不经过合并器。
+4. 于是「ChiCTR via WHO ICTRP」（§15.9 第 6 条、WHO 条款 4.b(1)）也是空的：
+   标签逻辑正确、测试通过、函数从未被喂过数据。
+
+**为什么组件测试没抓到**：`xyb-trials-ictrp.test.mjs` 直接调
+`unified.sourceAttributionLabel(...)`，验证的是这个**纯函数**；
+`xyb-trials-orchestrator.test.mjs` 的聚合断言只看 `statuses` 的终态，
+不看 `records` 的形状。两边都绿，中间那段「谁给记录打标签」没有任何断言——
+而它恰好是唯一必须存在的那一段。
+
+**处置**（`electron/main/trial-orchestrator.ts`）：
+
+1. 新增 `tagRecords(status)`，在 `aggregate()` 里逐条打标签：
+   `source`（真正投递该行的渠道）、`sourceLabel`（已处理 via 关系）、
+   命中一手来源时另加 `sourceViaAggregator` / `sourceFirstHand`。
+   原始字段保留不被覆盖。
+2. 新增 `SOURCE_OVERLAPS`（宿主侧副本，镜像 `unified.js` 的同名表）与
+   `firstHandKey()` / `normalizeRegistryName()`。寄存器字段按候选顺序取
+   `source_register` / `sourceRegister` / `registry` / `source_registry`——
+   真实 ICTRP 用的是 **`source_register`**（实测分布：ClinicalTrials.gov 3819、
+   JPRN 994、**ChiCTR 579**、EU CT 278、NL-OMON 124…）。
+   名字折叠成只留字母数字再比对，否则 `"ClinicalTrials.gov"` 永远匹配不上
+   键 `clinicaltrials_gov`——**四个来源里会静默地一个都不匹配**。
+3. **未建模的寄存器必须保持安静**：真实快照横跨 JPRN、EU CTIS、ANZCTR 等
+   十几个库，我们只有三个。给 JPRN 行编一个「JPRN via WHO ICTRP」会凭空
+   暗示一条本应用并不具备的一手通道，所以不认识的登记库一律沿用聚合库
+   自己的标签。已有测试钉住这条（`veeva_ctv` 不得出现「via」）。
+4. 宿主副本与插件副本**必然可能漂移**（Electron 主进程不得 import 插件的
+   私有模块），所以加了一条把两者对照的测试：漂移会失败一个测试，
+   而不是静默标错记录。
+
+**端到端验证（用真实服务的真实信封）**：按 `tools.py:193-206` 逐字构造
+`ictrp_search` 返回体（顶层 `trials` / `matched_rows_returned` /
+`upstream_reported_total` / `provenance`），喂入
+`interpretDispatchResult` → `terminalise` → `aggregate`，实测：
+状态 `SUCCESS`、原因码 `UPSTREAM_RESULT_INCOMPLETE`、两个数字分开
+（300 vs 6952）、WHO 处理日期 `"10/04/2026 15:26:10"` 原样存活、
+300 条记录中 **209 条标注「ChiCTR（中国临床试验注册中心） via WHO ICTRP」**、
+**91 条标注「WHO ICTRP」**。
+
+**第八条教训**：**一个正确的纯函数不等于一个被正确接线的功能。**
+这一轮修的三处（`sourceLabel`、`sourceAttributionLabel`、双数字）全都是
+「函数对、测试绿、数据没进来」。判别方法是问一句
+**「谁在运行时给它喂数据，那个调用点有没有测试」**——
+如果答案只是「有个测试直接调它」，那么被验证的是算得对，不是接得上。
+
+### 15.23 WHO 条款披露入口（本轮补建）
+
+SPEC §15.7 要求 UI 的 ICTRP 结果区含一个**可折叠的条款披露入口**，内容是六条义务本身，并附条款原文的**逐字摘录**（转述会丢「independent of format and method of acquisition」这类关键措辞）。核对发现此前**不存在**：面板只渲染一行归因 + 一个外链，六条义务仅写在 model-facing 的 `skills/unified-trial-query.md:87-89`。
+
+已在 `views/trials.html` 的 `ictrp.state === "SUCCESS"` 分支内新增 `<details class="terms">`：标题「使用条款与义务（WHO ICTRP）」，逐字引用上述措辞与「in effect as long as the user retains any of the data」（**卸载不终止义务**，用户自行留存的数据仍受约束），六条按条款号（4.b(1) / 4.b(3) / 4.b(2) / 4.c / 4.e / 4.d）逐条列出，并声明与 WHO 无隶属关系。新增 CSS 只使用本面板真实声明过的变量（`--mint/--ink/--body/--soft/--line/--bg/--muted`，见 `trials.html:8-16`，深色模式覆盖在 `:19-27`）——CSS 自定义属性未声明不会报错，只会静默失效（§15.16 的教训）。
+
+UI 契约测试（`apps/desktop/test/xyb-trials-ui-vocabulary.test.mjs` 第 10 条）断言：必须用 `<details>`、必须逐字引用两处原文、六条条款号齐备、每个新 CSS 类都有规则。**反向自证**：把逐字引文换成中文转述 → `not ok 10`「必须逐字引用条款原文」；byte-identical 还原后 10/10。
+
+**勘误（2026-10-05，编号簿记）**：本节在中文镜像里存在，而英文权威版里此前**只有 §15.10 的销账行引用了「见 §15.23」、没有该节本身**——插入 §15.24 时把标题弄丢了。**中文有、英文没有，而英文是唯一权威版本**：两者冲突时规则要求以英文为准，可读者去英文找这一节会找不到。已按中文本回写英文正文（本节即回写结果），两侧结构现在逐节一致。
+
+### 15.24 第七个真缺口：宿主聚合器零去重，同一试验被计两次
+
+**症状**：§15.5 合并规则 1–2 与 §5.3 的 `overlapWith` **只登记在 SPEC 里**。
+`electron/main/trial-orchestrator.ts` 的 `aggregate()` 对记录只做了一件事：
+`statuses.flatMap((status) => tagRecords(status))`——**没有任何去重**。
+`grep -c "overlapWith\|AGGREGATOR_OVERLAP\|dedupe\|mergeGroup" trial-orchestrator.ts`
+在此轮之前为 **0**。
+
+**实测后果**：同一条 ChiCTR 试验经「ChiCTR 直连」与「ICTRP（`source_register =
+"ChiCTR"`）」两条通道到达时，返回**两条记录**、`totalRecords: 2`：
+
+```
+records: [
+  'ChiCTR（中国临床试验注册中心） | Gemcitabine trial',
+  'ChiCTR（中国临床试验注册中心） via WHO ICTRP | Gemcitabine trial'
+]
+```
+
+**这不是美观问题。** §5.3 第 4 条明确禁止把任何两个数字合并成一个，而重复计数正是
+那条禁令所针对的坍缩——只不过方向相反：它**虚增**。用户在「新辅助治疗有多少条
+ChiCTR 试验」这类问题上会得到一个偏高的数字，而偏高的数字看起来比偏低更权威、
+更不容易被怀疑。§15.7 记录的 ICTRP 与 ChiCTR 的**系统性重叠**（中国试验在 ICTRP
+里 `source_register = "ChiCTR"`）让这条路径**必然**被走到，不是偶发。
+
+**为什么测试没抓到**：`xyb-trials-ictrp.test.mjs` 的重叠合并测试测的是
+`unified.js` 里的插件合并器（`mergeGroup` / `SOURCE_AUTHORITY`），它**确实**
+实现了合并；宿主聚合器是另一份实现，**从没写过合并**。两个模块同名同责、
+一份有一份无，而测试只覆盖了有的那份。这与 §15.22 是同一个形状：
+**纯函数正确 ≠ 那条路径被接上**。
+
+**处置**（`trial-orchestrator.ts`）：
+
+1. 新增 `SOURCE_AUTHORITY`（宿主侧副本，镜像 `unified.js`）与
+   `compareSourceAuthority()`。§15.5 规则 1–2 的「一手注册库胜过聚合库」
+   现在是一张表里的数字，而不是 `localeCompare` 的巧合。
+2. 新增 `normalizeRegistryId()`：**只做大小写与分隔符折叠，绝不模糊匹配**。
+   因为把两个不同试验合并成一个、再让用户据此做临床判断，比让同一条试验
+   出现两次要糟得多。
+3. 新增 `registryIdOf()`，字段候选顺序含 **`trial_id`**——那是 WHO ICTRP 的
+   主键（真实载荷：`{trial_id: "ACTRN12605000026628", source_register: "ANZCTR"}`）。
+   漏掉它会让**每一条** ICTRP 记录都因「无登记号」而不参与合并，静默地
+   把刚修好的重复计数又装回去。
+4. 新增 `mergeRecords()` / `mergeGroup()`：同登记号分组，按权威序取主记录，
+   `merged` / `mergedFrom` / `overlapWith` / `sourceLabels` / `perSource` 全部保留。
+   **落选的版本不丢弃**——用户问「为什么这条写 ChiCTR 而 ICTRP 也有」时，
+   两份都要看得到。缺登记号的记录一律不合并（§5.3：身份需要登记号，
+   标题相似只是提示，不是身份）。
+
+**端到端实测（真实种子）**：取真实的 ChiCTR 种子前 40 条 + 真实 ICTRP 快照前
+300 条（其中 209 条的 `source_register` 为 ChiCTR）同时喂入聚合并集：
+
+```
+raw arrivals: 40 + 300 = 340
+totalRecords after merge: 304  → 去重 36 条
+merged records: 36
+countsAreLowerBounds: true     （合并不影响下界地位）
+```
+
+**第九条教训**：**同名同责的两个模块，测了一个不等于测了另一个。**
+插件里有一份合并器、宿主里有另一份聚合器，职责重叠、名字相近，
+而它们**不共享代码**（Electron 主进程不得 import 插件的私有模块）。
+只要出现这种「两份实现」，就必须问：**这两份的实现程度一样吗？**
+本例中一份完整、一份为零，而门禁全绿——因为测试认的是那份完整的。
+
+### 15.25 第八个真缺口：记录上的链接与日期，一列都没被认出来
+
+**症状**：面板的记录卡片有「查看原始登记信息」链接与「信息更新于 …」两行，但走宿主扇出路径时**恒为空**。实测真实种子（ChiCTR 前 20 条 + ICTRP 前 20 条，共 40 条记录）：
+`openable link: 0 / 40`、`fetchedAt: 0 / 40`。
+
+**因果链**（与第二、五、六个缺口同形——**名字对不上，而且没人问过真实载荷里叫什么**）：
+
+1. 面板读 `it.sourceUrl || it.url` 与 `it.fetchedAt`；
+2. 插件 `unified.js` 的 `normalizeRecord()` 找 `sourceUrl` / `url` / `link`；
+3. 而真实载荷用的是**各来源自己的字段名**：
+   - WHO ICTRP 快照：**`web_address`**，**6262/6262** 行都有；
+   - 随包 ChiCTR 归档：**`detail_url`**，**468/468** 行都有；
+   - 日期：ICTRP 用 `last_refreshed_date`（逐条记录的 WHO 刷新日），ChiCTR 用 `updated_at`。
+4. 三个名字一个都不在候选表里，于是全部为 `undefined`。
+
+**为什么这是缺陷而不是美观问题**：条款 4.b(1) 要求「attribute the source of the data as WHO ICTRP」。归因的前提是**用户能找到被归因的那份数据**；给出一条打不开的「原始登记信息」，等于把核对的责任交还给用户却又不给路。**无法核验的引用不是引用。**
+
+**处置**（`electron/main/trial-orchestrator.ts` 的 `tagRecords()`）：
+
+1. 新增 `RECORD_URL_CANDIDATES`（`sourceUrl` / `source_url` / `url` / `link` /
+   `web_address` / `detail_url` / `detailUrl` / `registry_url`）与
+   `RECORD_DATE_CANDIDATES`（`fetchedAt` / `fetched_at` / `updated_at` /
+   `updatedAt` / `last_refreshed_date` / `registration_date`），在宿主侧把
+   各来源的字段名折到面板读的那两个名字上。放在宿主而不是面板，是因为**让面板
+   学会五套 schema 就是把同一个问题复制五份**。
+2. **已有值不被别名覆盖**：显式 `sourceUrl` 优先，别名只是回落（有测试钉住）。
+3. **日期绝不回落到今天**。在一条试验旁边打印今天的日期，等于断言它今天刷新过——
+   一个没人做过的声明。这与 §15.15 拒绝用 `Date.now()` 顶替 WHO 处理日期是同一条
+   理由：**缺失要显示为缺失**。
+
+**实测修正**：`openable link: 0/40 → 40/40`、`fetchedAt: 0/40 → 40/40`；
+样本 `{source: "who_ictrp", sourceUrl: "https://anzctr.org.au/ACTRN12605000026628.aspx",
+fetchedAt: "2020-01-13"}`——注意日期是 **2020-01-13**，即这份记录真实的最后
+刷新日，而不是 2026-10-05。若按「看起来合理」回落成今天，用户会以为这条试验
+刚更新过。
+
+**第十条教训**：**在写字段解析代码之前，先打印一行真实载荷的键名。**
+这一轮与上一轮的四个缺口全部是同一件事的变体——两端都「有这个概念」，
+中间那层猜错了字段名，而**猜错不会报错，只会静默变成 `undefined`**。
+一条 `console.log(Object.keys(row))` 的成本，低于之后四轮排查。
+
+**门禁排障的一则附带教训**（记录以免重犯）：一次复合命令里 `cd ..` 与
+`(cd apps/desktop && …)` 混用，使后续门禁在错误的工作目录下运行并整体报
+`FAIL`；从仓库根逐个复跑，六个门禁**全部 exit 0**。**门禁报红时先确认它是在
+哪个目录、哪个 shell 状态下跑的，再考虑是不是代码坏了。**
+
+### 15.26 第九个真缺口：给一个没试过的来源编造超时原因
+
+**症状**（探针发现，非用户报告）：`aggregate()` 对所有登记来源建表，未出现在
+`conclusions` 里的来源会被填上一个兜底结论。原实现是：
+
+```ts
+return provided ?? terminalise(source, { toolRegistered: true, overallDeadline: true });
+```
+
+于是这些来源的 `reasonCode` 是 `OVERALL_DEADLINE`、`explanation` 是
+「整体检索时间已到，{来源} 还没开始，本次没有查询。」——**对一个根本没人尝试派发的
+来源，断言了一个具体的、从未被观察到的原因。**
+
+**为什么生产环境不会触发，而这仍然是缺陷**：`fanout()` 在结束时对每个来源都产出一条
+结论（未启动的用 `cancelled` 或 `overallDeadline`），所以真实调用永远传满五条，
+兜底分支只在调用方传了残缺数组时可达——例如测试，或未来某个新的调用方。
+但代码里的注释写的是「terminalised as "never asked"」（**从未被问过**），
+而实际产出的是一个**关于为什么没问的断言**。注释与行为不一致，且行为的那一侧
+违反 §15.15 的同一条规则：**不存在的答案不等于一个答案；没人确立过的原因不得被陈述。**
+
+**处置**：
+
+1. `SourceOutcome` 新增 `notAttempted?: boolean`，与 `overallDeadline` 并列且有注释
+   说明二者区别：前者是「调用方什么也没说」，后者是「确实到点了」。
+2. `terminalise()` 新增分支，产出 `state: "NOT_QUERIED"` /
+   `reasonCode: "NOT_ATTEMPTED"` / 文案「{来源} 本次没有产生结果，原因未报告。」
+   ——只陈述被观察到的事实。
+3. 该分支放在 `overallDeadline` **之前**，且**不再传 `toolRegistered: true`**
+   （那是替调用方声明了一件事，而调用方什么都没声明）。
+4. `aggregate()` 的兜底改为 `terminalise(source, { notAttempted: true })`。
+
+**反向自证**：把兜底还原成 `{ overallDeadline: true }` → 测试如期
+`not ok 14 - aggregate always reports every registered source in registry order`；
+还原后 42/42。新测试同时断言 `reasonCode === "NOT_ATTEMPTED"` **且**
+`explanation` 不匹配 `/时间已到|deadline/i`——后一条是为了让「不许编造原因」这件事
+本身可回归，而不只是钉住一个字符串。
+
+**第五条教训的重申**（原本用于 `toolRegistered === false`）：**「默认未上报」≠「上报为否」。**
+本缺口是它的镜像：**「未尝试」≠「超时未及」。** 两者都属于同一类错误——
+把一个缺失的输入，当成一个具体的负面事实来陈述。
+
+### 15.27 第十个真缺口：合并规则是对的，但拿不到输入
+
+**症状**：宿主合并（§15.24）实现并测试完成后，用**真实随包种子**验证发现
+**一条重复都合并不了**：
+
+```
+ChiCTR 种子: 468 | ICTRP 中标 source_register=ChiCTR 的: 579
+到达 1047 → 结果 1047 | 去重 0
+```
+
+我最初把这个 `0` 记成了「这批数据恰好不重叠」。**这个解释是错的**，而且它恰好是
+最危险的那种错——一个看起来合理的理由，把缺陷留在原地。
+
+**真因**：随包 ChiCTR 归档把登记号放在 **`registration_number`**，
+实测 **468/468** 行都带它（形如 `ChiCTR-DCC-14004957`），而
+`registryId` / `registry_id` / `nctId` / `id` **一个都没有**。候选表里没有这个名字
+（宿主 `REGISTRY_ID_CANDIDATES` 与插件 `normalizeRecord` 都没有），于是每条 ChiCTR
+记录都是「无登记号」，按 §15.24 的规则**永不参与合并**。
+
+同理，WHO ICTRP 快照的主键是 `trial_id`（6262/6262 行）。宿主侧已含该名，
+**插件侧没有**——两份同名同责实现，各漏一个不同的名字。
+
+**为什么这是最隐蔽的一类缺陷**：合并代码本身**完全正确**且有测试。测试喂的是
+手写的 `{id: "ChiCTR1"}`，字段名恰好命中候选表，所以全绿。真实数据用的是另一个
+名字，于是功能静默失效——**没有报错、没有空值、没有警告，只是「没发生」**。
+用户看到的是两条一模一样的试验并排出现，而系统认为自己在正常工作。
+
+这也修正了 §15.24 的验证结论：当时报告的「340 到达 → 304 结果，去重 36 条」
+使用的是**构造的**重叠样本，不是真实种子。**构造样本能证明机制可运行，
+不能证明它被接上了。** 两者都必须验。
+
+**处置**：
+
+1. 宿主 `REGISTRY_ID_CANDIDATES` 与插件 `normalizeRecord` 的候选表都补
+   `registration_number` / `registrationNumber`；插件另补 `trial_id`。
+2. 新增**跨实现一致性测试**：直接读两份源文件，断言真实载荷会用到的每个字段名
+   （`registration_number` / `trial_id` / `registry_id` / `nctId` / `reg_no`）
+   在宿主与插件**两侧都存在**。两份实现用不同语言、不同目录，靠人工同步必然漂移；
+   这条测试让漂移变成构建期失败。
+3. 一条旧测试被**替换而非保留**：原
+   `aggregate counts records across sources without deduplicating here` 断言的正是
+   §15.24 判定为缺陷的行为（「不去重」），它在当时能通过，只是因为两个登记号字段
+   都还没被识别——**它在测试那个缺口，而不是测试契约**。
+
+**实测修正**（真实随包种子）：`到达 1047 → 结果 609`，**去重 438 条**，
+合并记录 438 条，样本 `mergedFrom: ['chictr', 'who_ictrp']`、主记录标
+「ChiCTR（中国临床试验注册中心）」，`countsAreLowerBounds` 仍为 `true`。
+
+**反向自证**：从两侧候选表删掉 `registration_number` → **3 条测试如期失败**；
+还原后 44/44。
+
+**第十一条教训**：**一个正确的函数配上一个不喂给它的调用点，等于没有这个函数；
+一个正确的字段候选表配上一个真实载荷不用的名字，等于没有这张表。**
+判别方法不是「有没有测试」，而是**「测试的输入是从哪来的」**——
+凡是手写的夹具，都在替真实数据做一个没人验证过的假设。
+这也解释了为什么本轮的发现方式是**用真实种子跑一遍**，而不是再读一遍代码。
+
+### 15.28 第十一个真缺口：把 §15.27 的教训用在其它候选表上
+
+§15.27 的结论是「一个正确的字段候选表配上一个真实载荷不用的名字，等于没有这张表」，
+并留下一个可执行的判别方法：**逐张候选表对着真实载荷点一遍**。
+本轮就照着做了，立刻又抓到两张。
+
+**标题**：WHO ICTRP 快照**没有** `title`、`brief_title`、`name`——**6262 行全空**；
+它用的是 **`scientific_title`（6221 行）** 与 **`public_title`（6260 行）**。
+宿主与插件的候选表里都没有这两个名字。
+
+**招募状态**：快照**没有** `status`、`overall_status`、`sourceStatusRaw`——**6262 行全空**；
+它用的是 **`recruitment_status`（6233 行）**。随包 ChiCTR 归档同样全部 468 行走
+`recruitment_status`，且一个 `status` 都没有。
+
+**实测影响**（真实种子前 50 条经 `aggregate`）：
+
+```
+修复前：  有标题 0/50    有状态 0/50
+修复后：  有标题 50/50   有状态 48/50
+```
+
+面板上就是 **50 张空白卡片**——列表里每一条都没有名字，用户无法分辨任何两条。
+「一张没有标题的试验列表，不是一张试验列表。」
+
+**处置**：宿主新增 `RECORD_TITLE_CANDIDATES`（`title` → `briefTitle` → `scientific_title`
+→ `publicTitle` → `name`）与 `RECORD_STATUS_CANDIDATES`（`recruitment_status`
+→ `overallStatus` → `status` → `sourceStatusRaw` → `state`），插件 `normalizeRecord`
+同步；**别名是回退不是覆盖**（ChiCTR 自带真 `title`，不得被别的列顶掉），
+且只在该字段仍为空时写入。跨实现一致性测试的字段表扩充为
+`registration_number` / `trial_id` / `registry_id` / `nctId` / `reg_no` /
+`scientific_title` / `public_title` / `recruitment_status`。
+
+**为什么与 §15.27 是同一个缺陷**：都是「候选表写的是想象中的字段名，不是载荷里的字段名」。
+区别只在发现顺序——§15.27 是合并功能整个失效（有功能性症状），
+§15.28 只是内容空白（看起来像「这批数据没有标题」）。
+**后者更容易被当成数据问题而放过**，这也正是把它单独记一节的理由。
+
+**反向自证**：删掉新别名 → **3 条测试如期失败**；还原后 48/48。
+
+**第十二条教训**：**空白比报错更像数据。** 当界面上出现一整列空值时，
+第一反应往往是「上游没给」，而真正常见的原因是**我们把它的名字拼错了**——
+是我们在找 `title`，而数据叫 `scientific_title`。
+判别方法同 §15.27：打印一行真实载荷，逐个字段名对表。
+
+### 15.29 第十二个真缺口：登记号与地点——同一次清点，又两张表
+
+§15.28 之后把「逐张候选表对着真实载荷点一遍」做到底，剩下两张也倒了。
+
+**登记号（`id`）**：面板每张卡片用 `it.id` 渲染登记号标签（`trials.html:215`），
+标题回退也是 `it.title || it.id`（`:212`）。宿主**算出过**这个值——
+`registryIdOf(bag)` 就是为了按登记号分组去重——但**从不写回记录**，
+只作为 `{ record, registryId }` 的第二个返回值用于内部分组。插件同理：
+`normalizeRecord` 把登记号放进 `registryId` 字段，面板读的是 `id`。
+实测：**40/40 条记录都有登记号，一条都显示不出来。**
+
+**地点**：面板渲染 `地点：` 一行读 `record.locations`（`:242`）。
+真实载荷里 `locations` **一条都没有**——ICTRP 快照 0/6262、随包 ChiCTR 0/468。
+真实用的是 ICTRP 的 **`countries`（5845/6262 行，`['Australia']` 这样的数组）**
+与 ChiCTR 的 **`institution`（468/468 行，「西安交通大学第一附属医院」）**。
+实测：**0/40 条记录渲染出地点**。
+
+**处置**：宿主新增 `RECORD_LOCATION_CANDIDATES`（`locations` → `countries` →
+`country` → `institution` → `sites` → `facilities`）与 `firstList()` /
+`locationText()`（同时接受字符串数组与对象数组，对象取 `country`/`city`/`site`/
+`name`/`province`）；已算出的 `registryId` 写回 `tagged.id`。插件 `normalizeRecord`
+输出 `id: registryId`，`normalizeLocations` 增加第二参数接收来源特有列
+（**通用列表有值时它是权威，只在通用列表什么都没产出时才用补充值**），
+`sourceUrl`/`fetchedAt` 同步补 `web_address`/`detail_url` 与 `updated_at`/
+`last_refreshed_date`，并**删掉 `fetchedAt` 的 `new Date()` 兜底**——那正是
+§15.25 拒绝过的「在试验旁打印今天」。
+没有地点时返回 `[]` 而不是占位符：**未知地点不是「未知地点」这个值**。
+
+**实测修正**：宿主扇出 **id 40/40、地点 39/40**；插件路径 **id 40/40、地点 39/40、
+链接 40/40、日期 40/40、标题 40/40**。样本
+`{id:"CHICTRDCC14004957", locations:["西安交通大学第一附属医院"]}`。
+
+**反向自证**：删掉写回与地点解析 → **2 条测试如期失败**；还原后 52/52。
+
+**第十三条教训**：**算出来不等于交付出去。**
+登记号被正确解析、正确用于分组、正确选了主记录——然后没有写进结果。
+这是「正确的纯函数 ≠ 被正确接线的功能」（§15.22）的**近亲**，区别在于：
+那一次是没人调用它，这一次是**调用了、用对了、但没把答案带回来**。
+判别方法：把「谁需要这个值」和「这个值最后出现在哪里」分开各查一遍——
+只查前半截，会得到「功能正常」的结论。
+
+### 15.30 第十三个真缺口：三个调用点，两种参数形状
+
+字段名清点完之后，把同一方法用在**参数**上，又抓到一处，而且这一处会产生
+用户可见的硬失败而不是空白。
+
+`lib/unified.js:596` 的签名是 `buildResult({ query, sourceResults })`，
+读的是 `query.keywords` / `query.condition`（:654-656）。三个调用点里：
+
+| 调用点 | 发送的形状 | 结果 |
+| --- | --- | --- |
+| 面板 `doCoverage()`（`views/trials.html:504`） | `{ query: { keywords, condition } }` | 正常 |
+| 助手工具 `xyb_trials_unify`（`main.js:305`） | `{ condition, keywords }` 顶层 | 正常（`buildResult` 的 `query` 为 `undefined`，两个字段都读成空串） |
+| 任何调用方 → `xyb_trials_fanout` | 宿主 `normalizeQuery()` 在 `trial-fanout.ts:596` | **抛错** |
+
+宿主的 `normalizeQuery()` 只读顶层的 `keyword` / `keywords` / `q` / `condition` /
+`terms`，**没有嵌套分支**。而面板发的正是嵌套形状——也就是说，
+**一个按面板写法调用扇出工具的请求会被直接拒绝**，错误信息是
+「试验检索需要一个关键词」；而检索工具吐出这句，用户最容易读成「没有结果」，
+这正是 §15.15 已经吃过一次的那个混淆。
+
+实测（同一个 `buildResult`，两种形状）：
+
+```
+面板形状 {query:{keywords:"胰腺癌",condition:"pancreatic cancer"}}
+  → query = {"keywords":"胰腺癌","condition":"pancreatic cancer"}
+工具形状 {condition:"pancreatic cancer",keywords:"胰腺癌"}
+  → query = {"keywords":"","condition":""}
+```
+
+（第二行本身不产生故障：`query` 只是回显进结果，没有下游消费者。但它说明
+**两个调用点从来不是靠同一份契约工作的**——它们各自恰好能用，因为恰好都读到了
+自己要读的那个分支。）
+
+**处置**：`normalizeQuery()` 增加嵌套分支，读 `raw.query` 下的同一组拼写，
+优先级与顶层完全一致（`keywords` 先于 `condition`）。一个空调用仍然抛错——
+**「形状不认识」不能退化成「空查询」**，那会让五次空搜索变成五条「0 条结果」。
+
+**反向自证**：删掉嵌套分支 → 测试如期失败（`需要一个关键词`）；还原后 48/48。
+
+**第十四条教训**：**字段名要对，参数的嵌套层级也要对。**
+「我们两边都有这个字段」再一次不够——这次连**字段在哪一层**都不一样。
+三个调用点各自恰好能用，是**巧合而不是契约**；判别方法与前一条相同：
+把每个调用点**实际发出去的那行代码**贴到被测函数上跑一遍，
+而不是读文档里的参数表。
+
+### 15.31 第十四个真缺口：门禁自己的「真实 schema」是手抄的
+
+§15.30 之后把同一方法（把每个调用点实际发出的东西贴到真实契约上跑）用在**测试**上，
+发现守卫本身有一个洞。
+
+`apps/desktop/test/xyb-trials-registry.test.mjs` 的
+`never emits a parameter the target tool does not declare` 注释写着
+「Each shape is checked against the real schema fragment」，但四组集合是**手抄的字面量**。
+逐个比对真实声明（veeva 读 `ctv-mcp-server@0.1.0` 的 `SEARCH_PROPS`；
+CDE 读随包 `mcp/chinadrugtrials-mcp.mjs` 的 `search_trials`；
+ICTRP 读随包 `mcp/ictrp/ictrp_mcp/server.py` 的 `ictrp_search`；
+ChiCTR 读 `chictr-mcp-server@3.0.2`）：
+
+| 来源 | 手抄集漏掉 | 手抄集**错误放行** |
+| --- | --- | --- |
+| chictr | 无 | 无 |
+| veeva_ctv | `start_date_from` / `start_date_to` / `updated_since` | 无 |
+| chinadrugtrials | `appliers`/`drugs_name`/`drugs_type`/`case_no`/`communities`/`researchers`/`agencies` | 无 |
+| who_ictrp | 无 | **`filters`** |
+
+`filters` 是真的洞：它由 `ictrp_filter` 声明，`ictrp_search` **不声明**
+（`server.py` 的 `ictrp_search` properties 实测为
+`descending/fields/keyword/limit/offset/refresh/sort_by`）。
+
+**当时无害，纯属侥幸**：`mapArgs` 只发两三个参数，而这些参数在两侧都正确。
+但一个守卫的价值**全部**在于「下一个人改 `mapArgs` 时它会不会响」——
+而它只认得别人告诉过它的名字。漏掉的七个 CDE 参数意味着：
+**任何新写的 CDE 参数映射都可能悄悄溜过这道守卫**，因为守卫根本不知道那名字是真的。
+
+**处置**：新增 `every parameter the fan-out sends is declared by the tool that receives it`，
+**从随包源码里读**声明集（CDE 与 ICTRP 直接解析随包文件；veeva 与 ChiCTR 是不 vendoring 的
+npm 包，集合按读到的版本号钉住并写明来源，使版本升级变成一次可见的编辑而不是静默漂移），
+并断言集合非平凡（`ictrp.size >= 6`、`cde.size >= 10`），否则守卫会**空转通过**。
+同时把旧测试里 ICTRP 那一行的 `filters` 删掉，并改写注释说明
+「这些是 mapArgs 可能用到的名字，不是 schema 的完整转抄」。
+
+**反向自证**：让 `mapArgs` 给 ICTRP 多发一个 `filters` → **3 条测试如期失败**
+（含新守卫，报错原文 `veeva_ctv 会发送它并未声明的参数 "filters"`）；还原后 28/28、全套 3457/3457。
+
+**第十五条教训**：**守卫如果用抄来的常量描述「真实」，那它描述的是抄写时的记忆，
+不是真实。** 凡是「必须与另一处保持一致」的集合——字段名、参数名、状态词表、
+工具清单——都要么从那一处**读出来**，要么在测试里**钉住版本号并写明出处**。
+一份手抄的 allowlist 只能发现它已经被更新过的那类错误。
+
+**附带登记（本条不是缺陷，是取舍）**：ChiCTR 与 veeva 的声明集无法从随包文件读取，
+因为它们不是本仓库 vendoring 的代码。把这两处也变成可读的需要
+`npm pack` 或把包随仓库固定，成本大于收益；钉版本号是当前口径下的折中，
+且**已写进注释**，使下一个人知道这行数字是从哪来的。
+
+### 15.32 第十五个真缺口：空列表替数据断言了一个它没有的原因
+
+面板的 `doCoverage()` 只能走本插件通道，传的是空 `sourceResults`，
+所以五个来源全部 `NOT_ENABLED`、记录数为 0。此时它渲染的是：
+
+> 没有找到符合条件的公开试验。可以换关键词再试。
+
+**零条记录的原因不是「没有匹配」，而是「一处都没问」。** 而这句话就印在覆盖面板下方，
+覆盖面板在同一屏里正写着：
+
+> 本次只覆盖 0/5 处来源：无。未覆盖：ClinicalTrials.gov（本次查询未包含该来源）……
+> **未覆盖不等于没有结果。**
+
+同一屏上两句话互相否认。而用户会相信更像结论的那一句——「没有找到」，
+因为它读起来像一个答案；「未覆盖不等于没有结果」读起来像免责声明。
+
+这与 §15.26 是同一条规则的不同表面：那一次是给没派发的来源编造
+「整体检索时间已到」，这一次是给没查询的列表编造「没有符合条件的试验」。
+**不知道原因时，就说不知道原因。**
+
+**处置**：`render(items, note, queried)` 增加第三个参数。
+`queried === 0` 时空态改为「本次没有查询任何来源，所以这里没有结果——
+这不是「没有找到符合条件的试验」。覆盖面板列出了每一处来源的本次状态。」
+`queried` 取自聚合器算出的 `res.sourcesQueried`，**不在面板里按状态重数一遍**
+（两处各算一次，迟早会算出两个数）。直连 CT.gov 的检索路径传 `1`：
+只要调用返回了就说明**问过一处**，那里的零命中才是真的「没有匹配」。
+
+**反向自证**：把空态改回无条件断言 → 测试如期失败；还原后 11/11。
+
+**一条测试自身的教训（同一次）：** 新测试第一版用
+`html.indexOf("没有找到符合条件的公开试验")` 定位句子，**命中的是上方文档注释里的引用**
+（注释里为了解释缺陷引用了这句话），于是「这句话必须落在已查询分支」永远成立——
+**守卫读到了注释，而不是代码**。改成匹配字符串字面量
+（`'"没有找到符合条件的公开试验。可以换关键词再试。"'`）后才是真的在查代码。
+这与 §15.31 同源：**守卫必须锚在会被执行的东西上，不能锚在描述它的东西上。**
+
+### 15.33 第十六个真缺口：三件披露里，只有一件没有句子
+
+goal 里点名的四项 UI 交付，逐个问 **「助手的回合里，用户会看到这一件吗」**，
+发现第四件只在面板里有：
+
+| 披露 | 宿主给出的形态 | 助手路径能否原样转述 |
+| --- | --- | --- |
+| 覆盖率 | `coverage.sentence` | 能（技能要求逐字呈现） |
+| 下界说明 | `completeness.sentence` | 能 |
+| 双数字 | `statuses[].matchedRowsReturned` / `upstreamReportedTotal` | 能 |
+| **手工 MCP 重叠** | **`overlaps: ManualOverlap[]`（裸数组）** | **不能** |
+
+**文案只存在于一个地方：面板的 `renderOverlap()`。** 技能文档却写着
+「返回体里已经有……手工 MCP 重叠提示」，于是助手要么自行编一句话，
+要么整条不提——而这条提示的内容是「合并后的条数不再是下界」，
+正是 §5.3 禁止静默丢掉的那类结论。
+
+**处置**：宿主新增 `overlapSentence(overlaps)`（`trial-orchestrator.ts`），
+`aggregate()` 返回值新增 `overlapsSentence`（无重叠时为空串，
+调用方只需判一个条件）。面板的 `renderOverlap(overlaps, sentence)`
+改为**渲染宿主的句子**，不再自己拼一份——两处各写一份的命运是
+「用户读到的那份宿主并不背书，而宿主改措辞时面板仍印旧话」，
+与 §15.31「守卫不能抄常量」是同一条规则用在**文案**上。
+技能文档同步：`overlapsSentence` 非空时必须原样呈现。
+
+**反向自证**：从 `aggregate` 删掉该字段、面板改回自拼 → **2 条测试如期失败**；
+还原后 54/54 与 12/12。
+
+**第十六条教训**：**「返回体里有这个信息」与「调用方能把这个信息交给用户」是两件事。**
+一个裸数组对代码是完整的，对**转述**是空的——而助手做的事就是转述。
+判别方法：对每一件披露，问**「模型会引用哪一行字」**；
+若答案是「它得自己编」，那这件披露在对话路径上就等于不存在。
+（§15.22 是「没人调用它」，§15.31 是「抄来的常量」，这一条是**「没人写得出来」**。）
+
+### 15.34 第十七个真缺口：`attempted` 的注释写的是它并不满足的那个等价
+
+`apps/desktop/electron/main/trial-orchestrator.ts` 的 `terminalise` 上写着
+「`attempted=true` 当且仅当派发已经开始」，测试标题是
+`attempted is true exactly when dispatch started`——**「当且仅当 / exactly when」是一个等价断言**。
+把 broker 能报的全部 outcome 交叉跑一遍 8 个终态，实测关系是：
+
+| `attempted` | 状态 | 含义 |
+| --- | --- | --- |
+| `false` | `SUCCESS` / `NO_RESULTS` | 问到了答案 |
+| `false` | `NOT_QUERIED` / `NOT_ENABLED` / `NEEDS_SETUP` | 没有派发：我们没问 / 用户关了 / 环境没就绪 |
+| `true` | `TIMEOUT` / `CHALLENGE_REQUIRED` / `FAILED` | 派发了但没拿到答案 |
+
+代码是对的（`NOT_ENABLED`/`NEEDS_SETUP` 报 `false` 符合 §5.2「只有 SUCCESS 与 NO_RESULTS 算作查过」），
+**错的是文档与测试标题对它的描述**。两个后果：①把 `false` 读成「没问」在
+`NEEDS_SETUP`/`NOT_ENABLED` 上偏离原意；②把 `true` 读成「有数据」在三个失败态上偏离原意。
+「当且仅当」这种措辞恰恰让人相信反方向也成立。
+
+**处置**：代码注释与 SPEC 改写为上面这张表，并写清
+「`isQueried(state)` 蕴含 `attempted`，反之不成立」；测试从**逐条枚举**改成
+**在 8 个终态上的等价断言**，并加一条**空转保护**：若某个终态在本用例的 outcome 空间里
+不可达就失败——否则「对全部终态的等价性」可以在只覆盖一半的情况下全绿。
+逐条枚举正是漏掉 `NOT_ENABLED`/`NEEDS_SETUP` 两行的原因。
+
+**两次反向自证都写明，因为第一次是无效的**：把 `NEEDS_SETUP` 分支包一层 `dispatched(...)`
+**没有让任何测试失败**——因为 `dispatched = (extra) => ({ attempted: true, ..., ...extra })`
+把 `extra` 展开在 `attempted: true` **之后**，内层对象的 `attempted: false` 又把它盖回去了。
+换成直接改共享 `base` 的 `attempted` 才如期让 **5 条测试失败**。**「改了代码而测试没红」有两种可能：
+契约没被覆盖，或者你的修改根本没生效——先确认改动真的生效，再下结论。**
+
+**第十七条教训**：**「当且仅当」是最容易被写错的一种契约措辞。**
+凡是写下它的地方，都要能指出**两个方向各自的证据**；只有一个方向有证据时，
+就该写成单向蕴含。而测试若只逐条枚举分支，它证明的是「我列的都成立」，
+不是「它们恰好是全部」——**等价性必须在整个状态空间上断言，并且要有空转保护。**
+
+### 15.35 第十八个真缺口：扇出对「永不返回的子调用」没有截止时间
+
+**症状**：`runFanout` 的 doc comment 列出四条保证，其中第 2 条写的是
+「The overall deadline stops *starting* new work; work already started is reported as TIMEOUT,
+and work never started as NOT_QUERIED with `OVERALL_DEADLINE`」，第 4 条写的是
+「Every registered source ends with exactly one terminal state」。但等待循环是：
+
+```js
+const settled = await Promise.race([...inflight.values()]);
+```
+
+**一个没有定时器的 `Promise.race` 只在「别的什么东西 settle」时才 settle。**
+只要占用全部在飞名额的子调用都永不返回（挂死的 MCP 子进程、被挂起的 sidecar、
+没人 resolve 的 promise），这个 await 就永远停在那里：不报超时、不报任何终态、
+用户和助手都拿不到任何一句话。第 2 条与第 4 条保证同时失效，
+而界面上的表现是一个永远转圈的面板。
+
+**边界是实测出来的，不是假设的**（这一条比缺口本身更重要，见下）：
+
+| 挂死子调用 | 并发 | 旧代码 | 新代码 |
+| --- | --- | --- | --- |
+| 1 / 5 | 5 | 正常终止（5 个终态） | 正常终止 |
+| 1 / 5 | 4 | 正常终止（5 个终态） | 正常终止 |
+| 4 / 5 | 4 | **永不返回** | 正常终止 |
+| 5 / 5 | 4 | **永不返回** | 正常终止 |
+| 5 / 5 | 5 | **永不返回** | 正常终止 |
+
+只要**有一个**子调用正常返回，循环就被它唤醒一次、重新检查截止时间、
+把超时的子调用收尾——所以挂死必须是**占满全部在飞名额**的那些子调用。
+生产形状（5 个来源、并发上限 4）恰好落在会挂死的一侧。
+
+**处置**：给等待加一个真实存在的唤醒源。
+
+```js
+const WAKEUP = Symbol("fanout.wakeup");
+const waitForWakeup = () =>
+  new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(WAKEUP), Math.max(1, Math.min(FANOUT_WAKEUP_POLL_MS, remainingMs())));
+    if (typeof timer.unref === "function") timer.unref();
+  });
+// ...
+const settled = await Promise.race([...inflight.values()].map((e) => e.promise).concat(waitForWakeup()));
+```
+
+- 新增常量 `FANOUT_WAKEUP_POLL_MS = 250`（`apps/desktop/electron/main/trial-sources.ts`）。
+  用轮询而不是「精确到点的一次定时」：循环的时钟 `now()` 是注入的，没有真实墙钟可以
+  据以定时；250ms 远小于最快来源的 15s 超时，而 75s 上限内的代价是每秒最多四次比较。
+- `inflight` 改成存 `{ source, promise }`。原因不是方便：**唤醒哨兵与子调用结果是两种不同的事件，
+  必须能被区分**；原先存裸 promise 时，「谁 settle 了」只能从 resolve 值里读，
+  而一个永不返回的子调用恰恰没有值可读。哨兵是「有东西可读」时才存在的东西。
+- 收尾时把在飞的子调用按 `{ timedOut: true }` 收尾，**不是** `{ overallDeadline: true }`。
+  整体截止时间是我们**停止等待**的理由，被违反的是子调用**自己的**超时预算；
+  标成 `NOT_QUERIED`/`OVERALL_DEADLINE` 会说出「这个来源没被问过」——
+  而它被问过，只是没答。这正是第五条教训（「未尝试」≠「超时未及」）的镜像。
+
+**实测**：修复后 5 个来源全部拿到终态，被派发过的挂死来源是 `TIMEOUT`（非 `NOT_ATTEMPTED`），
+未派发的是 `NOT_QUERIED`。反向自证：从 race 里去掉 `waitForWakeup()` →
+新测试**无法完成**（`cancelled 1`，运行器在测试仍挂起时结束），
+即「这个测试只有在子调用以外的东西能唤醒循环时才可能通过」。还原后逐字节一致。
+
+**我的错误（据实登记）**：round 20 我据此宣布了缺陷，但当时的探针只跑了「一个挂死 + 其余正常」
+这一种形状并得到了 `STILL-PENDING`——而**这个形状恰恰是不挂死的**。
+我随后用独立复现脚本重跑同一形状，它正常终止。**我在没有隔离变量的情况下把一次观察当成了机制。**
+正确的做法是先把「挂死的数量」「并发度」当成自变量扫一遍（就是上面那张表），
+再说这个缺陷在什么条件下成立。教训：**「我复现了」必须附带「在什么条件下复现」；
+一个没有边界的复现记录，下一次运行就会推翻它。**
+
+**第十八条教训**：**一句注释里的「会在 X 时唤醒」不是保证，只有当代码里真的存在那个唤醒源时才是。**
+判别方法：把注释里的每个动词变成一个**可观察事件**，然后问「哪个对象负责产生它」——
+找不出对象的那句，描述的是意图而不是行为。
+这条是本仓库「名字要对」（第六条）、「字段表要对」（第十一条）、
+「当且仅当要两个方向」（第十七条）之后，同一族的第五条：
+**契约里的每一个词，都要有一个能和它对应的东西。**
+
+---
+
+### 15.36 第十九个真缺口：探测链一次报了两个原因，而它只检查了其中一个
+
+**发现方法**：§15.34 的清扫法（`grep` 出全部 `exactly` / 当且仅当 声明，逐条在真实输入空间上验证）留下了三处未实测的措辞，本段验证第一处——`trial-runtime.ts:18`「A probe answers **exactly one** question: *is the prerequisite satisfiable right now?*」。
+
+**实测（`/tmp/rt-probe.mjs`，直接调用真实的 `probeIctrpRuntime`）**：
+
+| 构造的失败 | 修前结果 | 问题 |
+| --- | --- | --- |
+| `--version` 成功；依赖 import 抛 `ImportError: cannot import name 'Client' from 'httpx'`（安装已损坏，不是缺包） | `missing` / `PYTHON_DEPS_MISSING` / `python3 -m pip install mcp httpx` | **用户被告知去重跑刚刚失败的那条命令** |
+| `--version` 成功；依赖命令退出码 0 | `status: "ok"` / 「WHO ICTRP 运行环境已就绪。」 | 见下，另一条 |
+| `--version` 成功；依赖命令 `ENOENT` | `unknown` | 正确，无需修改 |
+
+**两个缺陷**：
+
+1. **`probePythonDeps` 把「命令失败」一律读成「依赖缺失」。** 语法错误、损坏的 wheel、ABI 不匹配、包内部抛出的 traceback 都会让命令非零退出。`missing` 是一个**关于原因的断言**，而当时只观测到「非零退出」。这违反本仓库已确立的规则（§5.2、§15.15、§15.26）：**只报观测到的，不报推断出的。** 而且它给出的是一条**可复制的命令**——用户会运行它，看到「要求已满足」，然后回到同样的失败上，此时系统已经用完了它的解释能力。
+
+2. **两处「检查了 A、声称了 B」**：
+   - 探测命令是 `import mcp, httpx`，而 SPEC §15.9 第 3 步与上游 `pyproject.toml` 都声明**三个**依赖（`mcp>=1.5.0` / `httpx>=0.28.0` / `pydantic>=2.10.0`）。缺 pydantic 时探测会**通过**，随后服务在启动时失败——而那正是探测被造出来要防止的情形。修复行写的也是 `pip install mcp httpx`，比它声称的检查少一个包。
+   - 更微妙的一条：**`--version` 退出码 0 且输出可解析，被当作「这个解释器能干活」的证据。** 一个 shim、一个被 `PATH` 遮蔽的包装器、一个插件缺失到只剩 `--version` 的解释器，都满足这个探测。这里我**没有**改动行为：把它降级成 `unknown` 会让真实的、健康的 Python 付出代价，而 `-c` 探测本身已经独立验证了「能导入模块」这件真正要紧的事——两次探测合起来覆盖了这个怀疑，单看第一步则不然。**据实登记为已知的乐观假设，不声称已解决。**
+
+**处置**：
+
+- 探测命令改为 `["-c", "import mcp, httpx, pydantic"]`（与 SPEC 第 3 步、上游 `pyproject.toml` 三者一致）。
+- 新增 `missing` 解析：从输出里抽取 `ModuleNotFoundError: No module named 'X'` / `ImportError: No module named X` 的模块名，**逐个保真**。
+- 修复行由**实际缺失的模块**拼出：`python3 -m pip install pydantic`，不再多装已就绪的包——否则用户无法判断命令是否改变了任何东西，且这一行与它上面的中文说明自相矛盾。
+- 输出里**没有任何模块名**时（非导入类失败）→ `unknown`，且**不给出 `fixCommand`**。**没有可执行修复时不得给出可复制的命令。**
+- 测试 15 → 17 条：`the deps probe imports every module upstream declares`（从**实际发出的命令行**里解析导入的模块，而不是读代码——与 §15.31 同源）、`a non-import failure is unknown, not a missing dependency`（同时断言 `reasonCode === undefined` 与 `fixCommand === undefined`）、`the fix line names the module that is actually missing`（断言命令含 `pydantic` 且**不含** `mcp`）。
+- **反向自证**：还原成「非零退出即 `missing`」→ `not ok 16`，如期失败；byte-identical 还原后 17/17。
+- **一条测试夹具被修正而非保留**：`the chain proceeds to dependencies once the interpreter is usable` 原用 `ModuleNotFoundError`（**不带模块名的裸串**），这在真实 Python 里不会出现。它不是捕到了缺陷，而是**用它自己的不真实换来了一个更宽松的解析器**——这正是 §15.27「夹具在替真实数据做假设」的同一种毛病。已改为 `ModuleNotFoundError: No module named 'mcp'`。
+
+**未实测的两处（据实登记，不写成发现）**：`trial-sources.ts:8`「exactly the presumed consent §4.2 forbids」与 `trial-orchestrator.ts:629`「exactly the collapse the rule...」都是**解释性类比**，不是可执行契约，没有可断言的真值条件；措辞即使不精确也不会让用户看到错误结论。**登记为「未证明但无后果」，不做进一步处置。**
+
+**第十九条教训**：**一个探测能证明的，只有它实际运行的那条命令。** 声明里写三个包、命令里导入两个，得到的是「两个都在，第三个没查」；把非零退出读成缺失，得到的是「某个东西坏了」被说成「就是缺包」——**两者都是把观测放大成结论**。判别方法：把探测的**声明**（文档、`pyproject.toml`、修复行）与它**真正执行的那一行**并排抄下来，逐项对齐；凡是声明里存在而命令行里不存在的名字，都是没被检查的东西。
+
+**第二十处教训（簿记）**：**一份自己编号的文档，需要一条能检查编号的规则。** 本轮把 §15.36 追加进两份 SPEC 时，我自己造出了四处簿记缺陷——中英两侧各有一处重号（§15.19/§15.20 都写「第四个」、英文 §15.35 抄成「第十一个」）、英文 §15.35/§15.36 的「处缺口」与同文件其余十七处的「个真缺口」方言不一致、中文本 §15.36 的标题被追加脚本插到了 §15.35 正文之前（使 §15.35 的正文挂在 §15.36 的标题下）。**这四处没有一处影响契约，因此没有任何测试会失败**——它们只会让下一个读文档的人按错误的编号去找东西，或在同一份文件里看到两种叫法而怀疑自己读错了版本。
+
+处置：缺口编号统一为**首次记录顺序**的连续序号（§15.15 = 第 3 处 … §15.36 = 第 19 处），中英两侧逐节一致（脚本校验：17 处标注，严格递增、无重号、无跳号）；方言统一为「个真缺口」；中文本标题重复已删除（删前先断言两处 §15.36 的下一行分别是 `**症状**` 与 `**发现方法**`，确认删的是我刚插入的那一个）。**教训：追加一大段结构化内容之后，要有一句可执行的检查去读回它的形状（编号、标题唯一性、顺序），而不是相信追加成功了——这与「门禁从注册代码读工具清单」（§15.3.3）、「从随包源码读 schema」（§15.31）是同一条规则用在文档上。**
+### 15.37 中英镜像一致性门禁（本轮补建，第二十处教训的自动化）
+
+§15.10 自 2026-10-05 起登记「**无门禁覆盖中英镜像一致性**——中文镜像靠人工同步，条文数量、章节编号与「已销账」标记都可能单侧漂移，而没有任何构建步骤会发现」，并且是这份 SPEC 里**唯一登记在案、没有自动化守护**的缺口。本轮把它销掉。
+
+**为什么需要它**：上一轮我自己就造出了四处簿记缺陷（§15.19/§15.20 都标「第四个」、英文 §15.35 与 §15.29 序数冲突、方言不一致、中文 §15.36 标题插到 §15.35 正文之前），以及**英文权威版整个 §15.23 缺失而中文镜像里有**。四处都不影响任何契约，因此**没有任何测试会失败**；它们只让交叉引用指向不存在的地方，而读者会以为自己读错了。人工同步的失败模式不是「写错内容」，是「结构悄悄不再对应」。
+
+**新增 `scripts/check-spec-mirror-parity.mjs`**（`pnpm check:spec-mirror`，`package.json` 已接线），校验四条**结构**不变量：
+
+1. **镜像里的每个编号小节都必须存在于英文权威版。** 英文是唯一权威，只存在于镜像的小节既不能被引用也不能被修正——§15.23 那次正是这条会红。
+2. **两份文件的编号唯一；缺口序数严格递增、不重用、不跳号；且同一编号两侧序数一致。** 「重用」由「最后一个序数达不到长度所隐含的位置」捕获（§15.19/§15.20 那次），「跳号」由连续性捕获。
+3. **英文权威版里每条 `§X.Y` 交叉引用都必须能解析到本文件的小节。** 跨文档引用除外——`docs/guide/…指导.md` §3.5 是真实存在的小节，只是不在这个文件里。作用域按 **bullet** 而非距离：真实的引用行在文件名与 `§3.5.6` 之间隔了 756 个字符，任何基于距离的窗口都会把健康引用报成悬空（第一版正是这么错的，报了 11 条幻影失败）。
+4. **代码围栏配平。**
+
+**它刻意不做什么**：不比较译文质量。没有机器能判断一段中文是否仍在说英文那段的意思，而一个声称能做的门禁比没有门禁更糟——它会给出一份「已验证」的假象。它捕捉的只是**结构性漂移**，也就是让交叉引用静默失效的那一类。
+
+**测试**（`apps/desktop/test/xyb-spec-mirror-parity.test.mjs`，12 条）：真实两份 SPEC 必须通过；中文序数（三/九/十/十二/十九/二十）解析正确；`####` 子节必须算作小节（第一版只认 `###`，对健康文件报了 11 条幻影失败）；镜像独有小节被拒；悬空交叉引用被拒；跨文档引用被允许；**前一条 bullet 里的文件名不能为后一条 bullet 的悬空引用开脱**（作用域必须按 bullet，否则任何一处 `.md` 都能洗掉全文的坏引用）；重复编号与围栏不配平被拒；序数漂移在两侧都被拒；跳号被拒。
+
+**反向自证**（六份夹具）：干净的一对 `exit=0`，五类缺陷各自 `exit=1` 并给出具体、可操作的消息，例如 `authority: cross-reference §15.77 does not resolve to any section in this file`、`mirror: §15.99 ("只有中文有的小节") does not exist in the authority — the English SPEC is the sole authority…`、`§1.2 is gap #3 in the mirror but #2 in the authority`。**对照用例是必须的**：只有红结果的探针证明不了任何东西。
+
+**一次探针自身的错误（据实登记）**：校验脚本第一版要求标题正好是三个 `#`，而本 SPEC 的子节用 `####`（`§15.3.5`、`§7.9.1`），于是真实健康文件被报出 11 条悬空引用。**门禁报红时，先怀疑门禁，再怀疑被它检查的东西**——这与「先 `pwd` 再怀疑代码」是同一类：**先确认工具在测量你想测量的东西。**
+
+**第二十条教训的落地**：上一轮写下的「一份自己编号的文档，需要一条能检查编号的规则」，本轮把它变成了可执行的门禁。结构不变量必须由代码检查，因为它们的特点是**不违反任何契约、不触发任何测试、只让文档之间不再对应**。
+
+### 15.38 宿主扇出端到端验收（四项 UI 交付同时在真实数据上成立）
+
+本轮做了一次**在真实随包种子与真实 broker 形状上**的端到端回放，而不是逐个组件验证——因为「每个组件都对」和「整条链路对」是两件事（§15.27 的教训）。做法：按 `host.ts:278-292` 实际发出的 `DispatchResult` 形状（`{ ok, durationMs, content }`）与 `plugin-mcp.ts` 实际返回的 MCP `TextContent` 包装喂入，来源经 `dispatchOrder()` 全部注册，`resolveTool` 每次从实时目录形状解析。
+
+**结果（120 条 ICTRP + 40 条 ChiCTR 真实种子）**：
+
+| 项 | 观测值 |
+| --- | --- |
+| 五个来源终态 | `clinicaltrials_gov=SUCCESS, chictr=SUCCESS, veeva_ctv=SUCCESS, chinadrugtrials=SUCCESS, who_ictrp=SUCCESS` |
+| `totalRecords` | 140（到达 140，去重 0——该切片恰好不重叠，见 §15.27 的「构造样本能证明机制，不能证明接线」） |
+| ICTRP 双数字 | `matchedRowsReturned=120` vs `upstreamReportedTotal=6952` |
+| WHO 处理日期 | `10/04/2026 15:26:10`（取自 `provenance.ictrp_export_date`，非抓取时间） |
+| `countsAreLowerBounds` | `true` |
+| 记录级 `source` | 140/140 |
+| 记录级 `sourceLabel` | 140/140 |
+| 其中「via WHO ICTRP」 | 9（其余 111 条为 ChiCTR 一手来源，不带 via 后缀） |
+| 链接 / 日期 | 140 / 140（修复前为 0 / 0，见 §15.25） |
+| 去重合并 | 40 条（`merged === true`），主记录取一手来源 |
+| 重叠提示句 | 非空，命名 `mcp_chictr` 与内置 `chictr` |
+
+**四项 UI 交付因此全部在一条真实结果上同时成立**：双数字下界、条款披露入口、记录级归属（含 "via WHO ICTRP"）、手工 MCP 重叠提示。
+
+**探针自身连续踩了三个坑（据实登记，都是探针的错，不是代码的错）**：
+1. 传了一个不存在的 `sources` 参数——`runTrialComposite` 不接收来源覆盖，注册表在模块内。十、五个来源静态存在但一个都没跑。
+2. 只传了裸载荷而没包 `{ ok: true, content }`。`interpretDispatchResult` 读 `result.ok !== true` 即判失败，五个来源全部 `FAILED / TOOL_FAILED`——**这是正确行为**。
+3. 在 `dispatchChild` 里解构 `{ source }`——`ChildCall` **没有 `source` 字段**，只有 `toolName`。真实报错 `Cannot read properties of undefined (reading 'key')` 被如实转成 `FAILED / SOURCE_UPSTREAM_ERROR`。
+
+三次都靠**「先打印模块实际收到了什么」**定位：第一次打印 `statuses` 的来源，第二次打印 `resolveTool` 与 `enabledInProject` 的实参，第三次打印 `dispatchChild` 的实参形状。**这与第十条教训同一条：在写字段解析代码之前，先打印一行真实载荷的键名**——探针也要遵守它。另可提炼一句：**探针里每一个「我以为它在哪儿」的字段，都必须先打印出来确认；不确认就写下去，得到的是一个关于探针的结论。**
+
+（一处对照：我曾用 `statuses[0]` 取 ICTRP 的数字得到 `undefined`，误以为发现缺口——`statuses` 按**注册表序**，`[0]` 是 `clinicaltrials_gov`。同一类错误，已在本 SPEC 登记过一次，本轮是第三次复现。）
+
+### 15.39 第二十处真缺口：技能文档许诺了合并路径拿不到的字段
+
+本轮把 §15.37 的「先打印、再断言」用在**技能文档与真实返回值**之间，抓到一处真缺陷。
+
+**症状**：`apps/desktop/resources/plugins/xyb.trials/skills/unified-trial-query.md` 的两处写着
+`xyb_trials_fanout`（以及 `xyb_trials_unify`）会返回**两句话**，并把 `overlapsSentence` 列在
+「必须原样呈现」的字段里。但**合并路径根本不产出这个字段**——实测两条路径的返回键：
+
+| 只在扇出 | 只在合并 | 共有 |
+| --- | --- | --- |
+| `schemaVersion` `host` `startedAt` `elapsedMs` `cancelled` **`overlaps`** **`overlapsSentence`** | `fetchedAt` `mergeCandidates` | `query` `statuses` `coverage` `completeness` `sourcesQueried` `sourcesUnavailable` `totalRecords` `records` `disclaimer` |
+
+根因不是疏忽，是**能力边界**：宿主扇出能调用 `userMcp.listRecords()` 枚举用户配置了哪些 MCP 服务器
+（§15.14），插件 API 面没有这个能力，因此 `buildResult`（`lib/unified.js`）无法做重叠检测。
+`grep -c "overlaps" lib/unified.js` → **0**。
+
+**为什么这是危险方向**：技能文档是给模型的契约。模型走路径 B 时，会去找一个不存在的字段；
+找不到，就**什么也不说**——而「没说话」在这里恰好等于「没有重叠」，即「条数仍然是下界」。
+**缺失被读成了一个结论**，这正是第三条教训「字段存在但恒为空比字段不存在更危险」的同族：
+**一份文档许诺的字段如果不存在，它比字段不存在更危险——因为读者会以为沉默是答案。**
+
+**处置**：①技能文档改为如实陈述——两句话（`coverage.sentence` / `completeness.sentence`）两条路径都有，
+`overlapsSentence` **只有扇出路径有**，并明写「**不要因为路径 B 没返回它，就以为没有重叠**——那句话
+不是『查过了没问题』，是『这个通道问不出来』」，同时要求模型在手工配过 MCP 且走路径 B 时自行声明；
+②路径 A 段落补一句「本字段只有扇出路径有」。
+
+**新测试** `apps/desktop/test/xyb-trials-skill-contract.test.mjs`（3 条）：实测两条路径的键集，
+断言扇出有 `overlapsSentence` 而合并**没有**（把不对称本身钉住，将来若补齐能力会红，提示同步改文档）；
+断言技能文档不得再出现「两条路径都返回两句话」的措辞、必须写明只有扇出有、必须带那句警告；
+逐字段核对技能文档点名的字段在其所述路径上真实存在。
+
+**反向自证**：把技能文档还原成缺陷版（去掉段落、恢复「（以及 `xyb_trials_unify`）」措辞）→
+`not ok 2`「技能文档不得把 overlapsSentence 说成两条路径都有」；`cp` 还原后 `diff -q` 逐字节一致、
+3/3 通过。
+
+**第二十一条教训：给模型的文档也在契约之内，也必须被测量。** 它与代码的差别只在读者是人还是模型——
+许诺一个不存在的字段，模型不会报错，它会**安静地略过**，而安静在这里等于断言。
+判别方法：文档里每一个「你会收到 X」的句子，都要有一条测试真的把 X 跑出来看一眼。
+同族第六条（名字要对）、第十一条（字段表要对）、第十七条（当且仅当要两个方向）、第十八条（唤醒源要存在）、
+第十九条（探测只能证明它跑过的那条命令）、本条（**文档许诺的字段必须真的出现**）。
+
+### 15.40 第二十一条教训的全库应用（技能文档字段承诺清点）
+
+§15.39 只修了被抓到的那一处。教训若不推广到全库，就只是一次修补。本轮把「文档里每一个『你会收到 X』的句子都要真的跑出来看一眼」应用到**全部技能文档**。
+
+**清点方法与结果**：用 `` `([a-z][A-Za-z0-9_.]{2,40})` `` 扫出三份技能文档里出现的结果字段名，再对两条路径**实测**每个名字是否存在：
+
+| 字段 | 扇出 | 合并 |
+| --- | --- | --- |
+| `coverage.sentence` | ✓ | ✓ |
+| `completeness.sentence` | ✓ | ✓ |
+| `completeness.countsAreLowerBounds` | ✓ | ✓ |
+| `coverage.complete` | ✓ | ✓ |
+| `overlapsSentence` | ✓ | **✗** |
+
+扫出的承诺共 5 条，唯一的缺口就是 §15.39 已修的那一条；`who-ictrp.md` 与 `china-trials.md` 里没有结果字段承诺。**清点是零发现的，但这本身是结论**——它把「还有没有同类缺陷」从「不知道」变成「测过了，没有」。
+
+**一处曾被怀疑、实测后确认不是缺陷**：`overlaps` 为空数组时 `overlapsSentence` 也是空串，于是「没配手工 MCP」与「配了但不重叠」两种情况在下游看起来一样。检查后发现契约是完整的：`trial-orchestrator.ts:859-861` 明写 `overlaps: manualOverlaps`——**数组始终存在且始终反映真实重叠数**，空串的含义被明确限定为「没有要说的」，调用方读 `overlaps.length` 即可区分三种情况（实测：`undefined` / 无重叠 / 有重叠 三种输入下 `overlaps` 分别为 `[]` / `[]` / 长度 1）。`overlapSentence` 的 doc comment 亦写明「Empty string when there is nothing to warn about, so callers can treat the empty string as "say nothing" instead of having to test the array as well」——**两个字段一起构成完整契约，缺一才是不完整**。据实登记为「检查过、不是缺口」，不写成发现。
+
+**顺带确认的宿主接线**（`runtime/host.ts:254-300`）：`manualTools` 由 `userMcp.listRecords().map(...)` 提供真实 server id；`dispatchChild` 走 `h.call("tools.execute", { sessionId, turnId, toolCallId, toolName, args, mode })`，因此五个子调用各自保留权限提示、会话授权、准入预算与审计记录——**这正是 §4.1/§4.2 要求 re-enter 而非直接调 `tool.execute` 的原因**。
+
+### 15.41 第二十二处教训：写文件时不要在同一个表达式里先截断再读
+
+本轮我把 §15.40 追加进中文镜像时，脚本末尾两行是：
+
+```python
+d = "docs/spec/xyb-unified-trial-host-orchestration.md"
+open(d, "w").write(open(d).read().rstrip("\n") + "\n")   # ← 英文权威版被清成 1 行
+```
+
+**`open(d, "w")` 先执行，把文件截断为 0 字节；被截断的正是随后要读的那个 `open(d)`。** 结果：英文 SPEC（当时 2168 行、本 SPEC 的唯一权威版本）变成单个换行符。全部门禁里只有 `check-spec-mirror-parity` 报出异常（`sections=0`），其余门禁全部通过——**因为被删掉的是一份 Markdown 文档，没有任何代码依赖它**。
+
+**恢复**：①`/tmp/parity/*/en.md` 残留着本轮反向自证时的快照（2144 行，含到 §15.36）；②中文镜像完好（782 行，且已含 §15.37–§15.40 的要点）。以 ① 为基底恢复英文，再据中文镜像把 §15.37–§15.40 的英文正文写回。**四节内容没有丢失**，因为它们的要点在损坏前已同步进中文镜像。
+
+**第二十二处教训：`open(path, "w")` 是一个析构动作，不要把它和读取同一个路径放进同一个表达式。** 具体三条：
+1. 写同一个文件前，先把它读进变量：`text = open(p).read()` **然后** `open(p, "w").write(...)`。
+2. 顺序敏感的多文件脚本，**先做完所有读，再开始写**——脚本里任何一处「读」的位置都可能在它之前已经被某个「写」改掉。
+3. **备份不是可选项**：本轮能恢复，纯粹因为反向自证测试恰好留下了一份 `/tmp` 快照。这不是设计，是运气。凡是要程序化改写一份长篇权威文档，先 `cp` 一份，并在**同一次**调用里验证副本行数。
+
+**这次事故与 §15.20「宿主拦截的是一个不存在的工具名」是同一形状**：一个动作打在一个**不是你想打的目标**上（那里是工具名不匹配、这里是路径相同而求值顺序不同），而且**没有任何检查会失败**。区别是这次我有快照可用。
+### 15.42 第 10 条第三款（10s 握手界）已建：由测量成立的条款要留下断言
+
+§15.10 第 3 项登记过「第 10 条第三款无断言」，理由是**真的**：`connectTimeoutMs` 是运行时选项而非 manifest 键（`packages/plugin-sdk/src/mcp-config.ts:78-86` 只校验 `callTimeoutMs`；`apps/desktop/electron/main/plugin-runtime.ts:393-397` 将其列为注入项），所以「写进 manifest」这条路走不通，没有可断言的声明面。
+
+**改为测量真实链路**：真实客户端连真实随包服务（`McpServerClient` + `python3 -m ictrp_mcp.server` + 随包 ICTRP 快照），冷启动三次分别 **1.27s / 1.28s / 1.33s**，对 10s 默认界约 **7 倍余量**，目录 9 个工具、含 `ictrp_search`。
+
+**新增断言**（`apps/desktop/test/xyb-trials-ictrp-timeout.test.mjs` 第 4 条）：用 `MCP_CONNECT_TIMEOUT_MS` 原值（**不额外放宽**）完成一次真实握手，断言成功、9 个工具、含 `ictrp_search`、耗时小于该界；解释器缺失以 skip 报告（环境事实），其余错误照常失败。**反向自证**：把该常量临时改为 1 → `not ok 4`；还原后逐字节一致、8/8。
+
+**两处口径更正**：①先前记的「0.36s」是单次 `initialize` 回复时间，不是整条握手（`initialize` + `notifications/initialized` + `tools/list`）；②**把「测过一次」当成「不会变」是把观测放大成结论的又一种形态**——所以这次留下的是断言，不是记忆。

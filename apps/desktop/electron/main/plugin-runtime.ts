@@ -3565,6 +3565,11 @@ export class PluginRuntime {
         values: refs.values,
         audit: this.services.audit,
         ...this.services.mcp,
+        // A server may declare its own call budget. The shared default is sized
+        // for local processes that answer from memory, so a server reaching a
+        // slow upstream would otherwise be cut off mid-flight and reported as
+        // failing even though it was working correctly.
+        ...(server.callTimeoutMs === undefined ? {} : { callTimeoutMs: server.callTimeoutMs }),
         // Re-check every redirect, not only the manifest's initial endpoint.
         assertUrlAllowed: (url) => this.assertEgress(loaded, url, "plugin.mcp.redirect"),
       });

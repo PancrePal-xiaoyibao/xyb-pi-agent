@@ -54,6 +54,7 @@
     "check:agent-policy": "node scripts/check-agent-policy-sync.mjs",
     "check:pr-base": "node scripts/check-pr-base-main.mjs",
     "check:ictrp-vendor": "node scripts/xyb-check-ictrp-vendor.mjs",
+    "check:spec-mirror": "node scripts/check-spec-mirror-parity.mjs",
     "docs:dev": "pnpm --filter @pi-desktop/docs dev",
     "docs:build": "pnpm --filter @pi-desktop/docs build",
     "docs:preview": "pnpm --filter @pi-desktop/docs preview",

@@ -354,7 +354,23 @@ function buildIctrpSeed(srcPath) {
   snapshot.field_note =
     "Fields trimmed at packaging time to the subset the host orchestrator consumes. " +
     "Identity, titles, condition, intervention, status, phase, dates, size, countries " +
-    "and registration source are preserved verbatim from the ICTRP export.";
+    "and registration source are preserved verbatim from the ICTRP export. " +
+    // 瘦身裁掉的是自由文本标准列。上游 `data/normalize.py` 的
+    // `derive_line_of_therapy_hint()` 会从 inclusion/exclusion **以及
+    // scientific_title** 里派生 `line_of_therapy_hint`；而 `carries_results_data`
+    // 只看 results 相关列。两类派生字段的离线可信度**不同**，必须分开讲：
+    //   - criteria 文本不在随包快照里 → 该来源的判定依据少了一部分；
+    //   - scientific_title 在（6221/6262 条有）→ 标题里明写治疗线数的仍可派生。
+    // 离线路径 `store.adopt()` 原样采纳快照 trials、**不做** `to_trial()` 归一化，
+    // 所以这两个字段在离线结果里是否出现，完全取决于快照里有没有、以及将来有没有
+    // 人把归一化补上也一起跑。无论哪种，上游对 None 的定义都是「我们所持资料里没写」。
+    "Free-text criteria columns (inclusion_criteria / exclusion_criteria) are NOT " +
+    "carried, so a derived field may be missing or null even when the trial does state " +
+    "it in its criteria. scientific_title IS carried, so line_of_therapy_hint can still " +
+    "be derived offline when the line is stated in the title. A null or missing " +
+    "line_of_therapy_hint means \u201cnot stated in the material we hold\u201d, never " +
+    "\u201cfirst-line\u201d and never \u201ctreatment-naive\u201d; carries_results_data " +
+    "is absent for the same reason and must not be read as \u201cno results exist\u201d.";
   snapshot.built_at = new Date().toISOString();
   // WHO 条款：须显示 WHO 处理该数据的日期。上游导出日期单独留一份，
   // 不要与「我们打包的日期」混为一谈。

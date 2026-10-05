@@ -79,6 +79,24 @@
             "sourceResults"
           ]
         }
+      },
+      {
+        "name": "xyb_trials_fanout",
+        "description": "一次性并行检索五个试验来源（ClinicalTrials.gov / ChiCTR / Veeva CTV / 中国药物临床试验登记与信息公示平台 / WHO ICTRP），把结果规范化、保守合并成统一清单——**不需要先逐个调用各来源工具**。凡是要「五个渠道分别有多少条」「各国注册库都覆盖了吗」「有没有漏查」这类问题，用本工具，只要给一个关键词即可。**返回值里的 coverage.sentence 与 completeness.sentence 必须原样呈现给用户**：它们写明本次真的覆盖了哪几处、哪几处没查；coverage.complete 为 false 时不得说成「五渠道汇总」或「各渠道数量」，必须如实说明哪几处没查，并说清未覆盖不等于没有结果。who_ictrp 是聚合库，成功时它的条数是下界（实得行数 vs 上游自报总数是两个数，不得合成一个「共 N 条」），同一条中国试验会与 ChiCTR 重复，合并后保留 ChiCTR 直连版并标注「via WHO ICTRP」。若你已经分别取回了各来源结果、只想让它们合并，请改用 xyb_trials_unify 并把结果放进 sourceResults。仅整理公开信息，不构成医疗建议。",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "keywords": {
+              "type": "string",
+              "description": "检索关键词，可中文，例如「胰腺癌 KRAS 免疫治疗」；药物名/靶点也填这里"
+            },
+            "condition": {
+              "type": "string",
+              "description": "病种，英文更准，例如 pancreatic cancer。只填病种，不要把药名填在这里"
+            }
+          }
+        }
       }
     ],
     "settings": [

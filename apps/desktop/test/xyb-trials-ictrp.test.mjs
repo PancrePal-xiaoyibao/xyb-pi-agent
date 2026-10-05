@@ -220,20 +220,45 @@ test("未登记来源按确定性顺序回落，不崩且可复现", () => {
 
 // —— §15.9 第 7 条：写盘失败仍返回结果 ——
 
-test("ICTRP 缓存写盘失败仍返回结果，只标注未落盘", () => {
+test("上游写了说明不得被升级成「来源失败」", () => {
+  // 这一条原先写成：传入 explanation: "…（CACHE_WRITE_FAILED）"，再断言
+  // s.explanation 匹配 /缓存未落盘/ ——它断言的是自己的夹具，任何 explanation
+  // 都能通过；而 CACHE_WRITE_FAILED 全仓库只有那一处、无任何代码产出。
+  // 那是「一条永远不失败的门禁」的测试版。
+  //
+  // 真正属于本层的契约是：**上游附带说明，不等于来源失败**。写盘失败发生在上游
+  // 服务内部（`cache/store.py` 对 OSError 是 pass 后照常返回结果；随包副本逐字节
+  // 一致、不得就地修改），本层能守的是「不因为 explanation 有内容就改判状态」。
+  // 故这里用一段**与缓存无关**的说明，把「有 explanation」与「写盘失败」解耦：
+  // 若实现是靠 explanation 里的关键词猜状态，这条就会红。
   const r = unified.buildResult({
     sourceResults: {
       who_ictrp: {
         state: "SUCCESS",
         records: [{ id: "NCT1", title: "T" }],
-        explanation: "结果已返回，但缓存未落盘（CACHE_WRITE_FAILED）",
+        explanation: "服务在返回结果时附带的任意说明，与缓存无关",
       },
     },
   });
   const s = r.statuses.find((x) => x.source === "who_ictrp");
-  assert.equal(s.state, "SUCCESS", "写盘失败不得把整条来源判为失败");
+  assert.equal(s.state, "SUCCESS", "带说明的正常结果不得被改判为失败");
   assert.equal(r.records.length, 1, "结果照常返回");
-  assert.match(s.explanation, /缓存未落盘/);
+  assert.match(s.explanation, /任意说明/, "上游说明必须原样透传，不得被丢弃或改写");
+});
+
+test("来源自报 FAILED 时不得靠 explanation 洗成成功", () => {
+  // 反向：状态由 state 决定，不由 explanation 的文风决定。
+  const r = unified.buildResult({
+    sourceResults: {
+      who_ictrp: {
+        state: "FAILED",
+        records: [{ id: "NCT1", title: "T" }],
+        explanation: "结果已返回，但缓存未落盘",
+      },
+    },
+  });
+  const s = r.statuses.find((x) => x.source === "who_ictrp");
+  assert.equal(s.state, "FAILED", "state 是权威，explanation 不能把它洗白");
 });
 
 // —— §15.9 第 8 条：本地工具不进扇出 ——
@@ -284,4 +309,73 @@ test("ICTRP 的 NEEDS_SETUP 不得被当成「没有结果」", () => {
   assert.notEqual(s.state, "NO_RESULTS");
   assert.equal(unified.isQueried("NEEDS_SETUP"), false, "需要安装 ≠ 已查询");
   assert.match(r.coverage.sentence, /WHO ICTRP/, "覆盖率句必须点名它没查成");
+});
+
+// ---------------------------------------------------------------------------
+// §15.9 criterion 6 / 9: the ICTRP copy of a Chinese trial must be labelled
+// "via WHO ICTRP".
+//
+// `mergedFrom` already records which sources contributed. What it does not say
+// is *how* the aggregator's copy relates to the first-hand one — and that is
+// the part a user needs to decide which portal to trust for updates.
+// ---------------------------------------------------------------------------
+
+test("the aggregator's copy of a first-hand trial is labelled via WHO ICTRP", () => {
+  assert.equal(unified.sourceAttributionLabel("chictr", "who_ictrp"), "ChiCTR（中国临床试验注册中心） via WHO ICTRP");
+});
+
+test("the first-hand copy carries no via label", () => {
+  // The primary record IS the direct version; labelling it "via" would invert
+  // the relationship the merge rule exists to preserve.
+  assert.equal(unified.sourceAttributionLabel("chictr", "chictr"), "ChiCTR（中国临床试验注册中心）");
+});
+
+test("the via label names the actual first-hand source, not a hard-coded one", () => {
+  // WHO ICTRP carries both ChiCTR and ClinicalTrials.gov registrations, so the
+  // label must name whichever one is actually in play. Hard-coding "ChiCTR"
+  // would mislabel every NCT record the aggregator also carries.
+  assert.equal(
+    unified.sourceAttributionLabel("clinicaltrials_gov", "who_ictrp"),
+    "ClinicalTrials.gov via WHO ICTRP",
+  );
+});
+
+test("a source with no overlap relation is not given a via label", () => {
+  // Nothing in SOURCE_OVERLAPS says Veeva routes through WHO ICTRP, so writing
+  // "Veeva CTV via WHO ICTRP" would invent a relationship that is not there.
+  assert.equal(unified.sourceAttributionLabel("veeva_ctv", "who_ictrp"), "WHO ICTRP");
+  assert.equal(unified.sourceAttributionLabel("", "who_ictrp"), "WHO ICTRP");
+});
+
+test("two first-hand sources merging are both named plainly", () => {
+  // chictr + clinicaltrials_gov on one registry id: neither came "via" the
+  // other, so neither gets a via label.
+  assert.equal(unified.sourceAttributionLabel("chictr", "clinicaltrials_gov"), "ClinicalTrials.gov");
+});
+
+test("an unknown source key falls back to the raw key rather than a blank", () => {
+  assert.equal(unified.sourceAttributionLabel("chictr", "some_new_registry"), "some_new_registry");
+  assert.equal(unified.sourceAttributionLabel("chictr", ""), "");
+});
+
+test("a merged record exposes a label for each contributing source", () => {
+  const merged = unified.buildResult({
+    query: { condition: "pancreatic cancer" },
+    sourceResults: {
+      chictr: {
+        state: "SUCCESS",
+        records: [{ registryId: "ChiCTR2400081234", title: "A", sourceStatusRaw: "Recruiting" }],
+      },
+      who_ictrp: {
+        state: "SUCCESS",
+        records: [{ registryId: "ChiCTR2400081234", title: "A", sourceStatusRaw: "Recruiting" }],
+      },
+    },
+  });
+  assert.equal(merged.records.length, 1, "同一登记号应合并为一条");
+  const record = merged.records[0];
+  assert.equal(record.primarySource, "chictr", "一手来源必须保留为主记录");
+  const bySource = Object.fromEntries(record.sourceLabels.map((l) => [l.source, l.label]));
+  assert.equal(bySource.chictr, "ChiCTR（中国临床试验注册中心）");
+  assert.equal(bySource.who_ictrp, "ChiCTR（中国临床试验注册中心） via WHO ICTRP");
 });

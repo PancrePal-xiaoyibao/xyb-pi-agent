@@ -60,7 +60,8 @@
         "env": {
           "PYTHONPATH": "./mcp/ictrp",
           "ICTRP_BUNDLE_PATH": "./data/ictrp/pancreatic-cancer.json"
-        }
+        },
+        "callTimeoutMs": 60000
       }
     ]
   },

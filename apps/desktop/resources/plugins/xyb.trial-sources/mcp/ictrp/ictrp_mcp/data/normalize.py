@@ -323,6 +323,18 @@ def to_trial(row: list[str], header: tuple[str, ...]) -> dict[str, Any]:
     trial["inclusion_age_min"] = _as_int(age_min)
     trial["inclusion_age_max"] = _as_int(age_max)
 
+    # ICTRP has no structured "line of therapy" column. Treatment line is stated
+    # only inside the free-text inclusion/exclusion criteria (e.g. "first-line",
+    # "previously treated", "一线") and, frequently, the scientific title
+    # ("...Received >=2 Prior Lines of Therapy"). Derive a non-authoritative hint
+    # from that text so a caller can surface it without re-parsing. It is a hint,
+    # never a fact: absence here does NOT mean the trial is treatment-naive.
+    trial["line_of_therapy_hint"] = derive_line_of_therapy_hint(
+        raw.get("inclusion_criteria"),
+        raw.get("exclusion_criteria"),
+        raw.get("scientific_title"),
+    )
+
     # `results yes no` is a flag, not content, so it is excluded from the test.
     # Measured: the substantive `results *` columns are ~0.0% populated for
     # ChiCTR records, so this is a property of the registry rather than of an
@@ -346,3 +358,66 @@ def _as_int(value: str | None) -> int | None:
         return None
     m = re.search(r"-?\d+", text)
     return int(m.group(0)) if m else None
+
+
+#: Treatment-line vocabulary, as it actually appears in live inclusion/exclusion
+#: text. Both English and Chinese markers are matched; "refractory"/"relapsed"/
+#: "previously treated" indicate a later line without naming a number.
+_LINE_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"first[-\s]?line|1st[-\s]?line|一线|treatment[-\s]?naive|previously untreated", "first-line"),
+    (r"second[-\s]?line|2nd[-\s]?line|二线", "second-line"),
+    (r"third[-\s]?line|3rd[-\s]?line|三线", "third-line"),
+    (r"fourth[-\s]?line|4th[-\s]?line|四线", "fourth-line"),
+    (r"relapsed|refractory|previously treated|prior (therapy|treatment)|已接受.*治疗|经治", "later-line"),
+)
+
+#: Numeric "line" statements, e.g. ">=2 Prior Lines of Therapy" or "2-line",
+#: where a word may sit between the number and "line" ("2 prior lines"). The
+#: captured number is the *minimum* line; ">=2" means second-line or later, never
+#: first-line, so it resolves to `later-line` rather than a specific line.
+_LINE_NUMBER = re.compile(r"(\d+)\s*(?:[-\w.,]+\s)*?(?:line|lines|线)")
+
+_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+}
+_WORD_NUMBER = re.compile(r"(one|two|three|four|five|一|二|三|四|五)\s*(?:line|lines|线)")
+
+
+def derive_line_of_therapy_hint(
+    inclusion: str | None, exclusion: str | None, scientific_title: str | None = None
+) -> str | None:
+    """Best-effort treatment-line label from free-text criteria.
+
+    Returns the earliest explicit line if one is named (first > second > third >
+    fourth), else "later-line" when a numeric "N lines" (N>=2) or relapse/
+    refractory language is present, else `None`. `None` is deliberate: it means
+    "not stated in the criteria we hold", which must not be read as "first-line"
+    -- the export is incomplete and the column does not exist.
+
+    The scientific title is included because the line is often stated only there
+    (e.g. "...Received >=2 Prior Lines of Therapy"), not in the criteria body.
+    """
+    text = f"{inclusion or ''} {exclusion or ''} {scientific_title or ''}"
+    if not text.strip():
+        return None
+    from .query import _coerce  # local import avoids a cycle at module load
+
+    lowered = _coerce(text)
+
+    # Explicit worded lines take precedence -- they name a specific line.
+    for pattern, label in _LINE_PATTERNS:
+        if re.search(pattern, lowered):
+            return label
+
+    # Numeric "N line(s)": a minimum of N, so only the first-line case is exact;
+    # anything >=2 is "later-line", never a specific later number.
+    for match in _LINE_NUMBER.finditer(lowered):
+        if int(match.group(1)) <= 1:
+            return "first-line"
+        return "later-line"
+    for match in _WORD_NUMBER.finditer(lowered):
+        if _WORD_NUMBERS[match.group(1)] <= 1:
+            return "first-line"
+        return "later-line"
+    return None

@@ -7,6 +7,9 @@ import type { PluginRuntime } from "../plugin-runtime";
 import type { UserMcpRuntime } from "../user-mcp";
 import type { RuntimeState } from "./context";
 import type { FinishTurn } from "./plans";
+import { isTrialCompositeTool, runTrialComposite } from "../trial-fanout";
+import { childToolName } from "../trial-sources";
+import { probeIctrpRuntime } from "../trial-runtime";
 
 export type HostRuntimeDependencies = {
   runtimeState: RuntimeState;
@@ -249,6 +252,68 @@ export function createHostRuntime({
                   error: `turn ${q.turnId ?? "(none)"} is no longer dispatchable`,
                 },
               };
+            } else if (isTrialCompositeTool(q.toolName)) {
+              // SPEC §4.1/§4.2: the trial composite does not call five sources
+              // itself — it re-enters this same path once per source through
+              // `tools.execute`, so every child keeps the ordinary permission
+              // prompt, session grant, admission budget and audit record.
+              // Calling `tool.execute` directly here would skip all four and
+              // produce five unattributed calls the user never approved.
+              const result = await runTrialComposite({
+                sessionId: q.sessionId ?? "",
+                turnId: q.turnId,
+                args: q.args,
+                mode: sessionMode,
+                logger: { app: (...a: unknown[]) => (logger.app as (...a: unknown[]) => void)(...a) },
+                // Manual MCP servers never enter the fan-out, but a shadowing
+                // one must be reported: the two paths do not de-duplicate, so a
+                // merged count silently stops being a lower bound.
+                manualTools: userMcp.listRecords().map((record) => ({
+                  serverId: record.id,
+                  fullName: `mcp_${record.id}`,
+                  toolName: "",
+                })),
+                resolveTool: (source: import("../trial-fanout").TrialSource) =>
+                  plugins.getTools().find((candidate) => candidate.fullName === childToolName(source)),
+                enabledInProject: (pluginId: string) => pluginActiveInProject(pluginId, projectPath),
+                // Only consulted when a source's tool is absent from the catalog
+                // (§15.9 criteria 2 vs 3). The command comes off the descriptor,
+                // never from the model or the query.
+                probeRuntime: (source: import("../trial-fanout").TrialSource) =>
+                  probeIctrpRuntime(undefined, source.requiresRuntime ?? "python3"),
+                dispatchChild: (child: import("../trial-fanout").ChildCall) =>
+                  h.call<{
+                    ok?: boolean;
+                    content?: unknown;
+                    errorCode?: string;
+                    denied?: boolean;
+                    durationMs?: number;
+                  }>("tools.execute", {
+                    sessionId: child.sessionId,
+                    turnId: child.turnId ?? undefined,
+                    toolCallId: child.toolCallId,
+                    toolName: child.toolName,
+                    args: child.args,
+                    mode: child.mode ?? "agent",
+                  }),
+                registerChildAttribution: (child: import("../trial-fanout").ChildCall) => {
+                  // Pre-register under the composite's identity so an approval
+                  // prompt names the source that is asking (ADR 0062) instead
+                  // of showing a bare tool name.
+                  activeToolCalls.set(activeToolCallKey(child.sessionId, child.toolCallId), {
+                    toolName: child.toolName,
+                    args: child.args,
+                    createdAt: Date.now(),
+                    turnId: child.turnId ?? undefined,
+                    parentToolCallId: q.toolCallId,
+                    agentName: child.label,
+                  });
+                },
+                releaseChildAttribution: (child: import("../trial-fanout").ChildCall) => {
+                  activeToolCalls.delete(activeToolCallKey(child.sessionId, child.toolCallId));
+                },
+              });
+              payload = { executionId: q.executionId, ok: true, content: result };
             } else {
               const result = await tool.execute(q.args, {
                 sessionId: q.sessionId,
