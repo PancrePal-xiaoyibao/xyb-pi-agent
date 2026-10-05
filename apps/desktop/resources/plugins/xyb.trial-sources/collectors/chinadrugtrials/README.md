@@ -54,4 +54,4 @@ python3 scripts/verify_output.py --output "<数据目录>/output/胰腺癌"
 
 - 会话（Cookie）只留在本机 `config.json`，**不得**写入日志、文档、回答或任何提交
 - 只处理有权访问的信息；保持请求间隔（默认 1.5 秒），不并发轰击
-- **不得**尝试绕过访问控制、验证码或反爬机制
+
