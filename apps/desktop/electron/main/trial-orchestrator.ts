@@ -741,7 +741,7 @@ function noResultsSentence(source: TrialSource): string {
       // exist. The vendored service tree is byte-identical to upstream (gated by
       // scripts/xyb-check-ictrp-vendor.mjs), so the correction belongs here, in
       // the layer that owns what the user is actually told.
-      return `${source.label} 没有返回记录。注意：该来源只索引英文元数据，中文关键词必然 0 命中，这不能作为“没有相关试验”的依据；请改用英文关键词（如 pancreatic cancer）重查。`;
+      return `${source.label} 本次查询返回 0 条。注意：该来源只索引英文元数据，中文关键词必然 0 命中，这不能作为“没有相关试验”的依据；请改用英文关键词（如 pancreatic cancer）重查。`;
     default:
       return `${source.label} 查询成功，没有匹配记录。`;
   }

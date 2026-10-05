@@ -186,6 +186,11 @@ test("an ICTRP empty result is disclosed as a keyword-language artifact, not a f
   assert.match(conclusion.explanation, /pancreatic cancer/);
   // And it must not state the absence as a fact about the world.
   assert.doesNotMatch(conclusion.explanation, /没有匹配记录。/);
+  // Nor may it say it "returned no records" — that phrasing collides with the
+  // coverage sentence, which counts this same source as 「已覆盖」 because it did
+  // answer. "返回 0 条" states the fact without implying it went unqueried.
+  assert.doesNotMatch(conclusion.explanation, /没有返回记录/);
+  assert.match(conclusion.explanation, /返回 0 条/);
   // No other source picks up this sentence: it is specific to the aggregator.
   assert.doesNotMatch(terminalise(chictr, ok([])).explanation, /英文/);
   assert.doesNotMatch(terminalise(veeva, ok([])).explanation, /英文/);
