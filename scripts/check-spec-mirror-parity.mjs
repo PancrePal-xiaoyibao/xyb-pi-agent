@@ -1,31 +1,32 @@
 #!/usr/bin/env node
 /**
- * Bilingual SPEC parity: the English SPEC is the sole authority, and the Chinese
- * mirror is maintained by hand. Nothing has ever checked that they still agree,
- * which is how §15.23 came to exist in the Chinese mirror while being *absent*
- * from the English authority — a reader following a cross-reference from the
- * English side would have found nothing there, and the standing rule is that
- * the English side wins any conflict.
+ * SPEC structural integrity. The XYB trial-orchestration SPEC is authored in
+ * Chinese and is the sole authority; it previously sat in `docs/spec/` beside a
+ * hand-maintained Chinese outline, which two documentation gates read as an
+ * English/Chinese pair and rejected. It now lives in `docs/zh-CN/spec/` and has
+ * no counterpart, so there is no pair left to compare.
+ *
+ * What still matters is the document's *internal* consistency: the drift this
+ * gate has actually caught is a section number that exists in one place and is
+ * cited from another, which silently makes a cross-reference wrong. Single
+ * authority mode keeps exactly that check.
  *
  * Usage:
  *   node scripts/check-spec-mirror-parity.mjs
- *   node scripts/check-spec-mirror-parity.mjs --spec docs/spec/foo.md --mirror docs/zh-CN/spec/foo.md
+ *   node scripts/check-spec-mirror-parity.mjs --spec docs/zh-CN/spec/foo.md
+ *   node scripts/check-spec-mirror-parity.mjs --spec a.md --mirror b.md   (paired mode)
  *
  * What this checks (and what it deliberately does not):
- *   1. Every `###` section number in the mirror exists in the authority.
- *      Extra ZH structure is allowed only when the mirror's own header declares
- *      the section as an outline, because the mirror is explicitly a summary of
- *      a few ranges plus points for the rest.
- *   2. Section numbers are unique in both files, and the "第 N 个真缺口"
- *      ordinals are strictly increasing, unique and contiguous, with the same
- *      ordinal for the same section number on both sides.
- *   3. Every `§X.Y` cross-reference inside the authority resolves to a real
- *      section. In a self-numbering document this is the check that catches the
- *      lost-heading case above.
- *   4. Code fences are balanced.
+ *   1. Single-authority mode: every `§X.Y` cross-reference resolves to a real
+ *      section in the same file, section numbers are unique, and code fences
+ *      are balanced.
+ *   2. Paired mode (only when a `--mirror` is given): additionally, every
+ *      section number in the mirror exists in the authority, gap ordinals agree
+ *      per section number, and extra mirror structure is allowed only where the
+ *      mirror declares itself an outline.
  *
  * It does NOT compare prose or translation quality: no machine can tell whether
- * a Chinese paragraph still means what the English one means, and a gate that
+ * a Chinese paragraph still means what an English one means, and a gate that
  * claimed to would be worse than no gate. It catches *structural* drift only,
  * which is the drift that silently makes a cross-reference wrong.
  */
@@ -36,8 +37,8 @@ import path from "node:path";
 const root = fileURLToPath(new URL("..", import.meta.url));
 
 const DEFAULTS = {
-  spec: "docs/spec/xyb-unified-trial-host-orchestration.md",
-  mirror: "docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md",
+  spec: "docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md",
+  mirror: null,
 };
 
 function parseArgs(argv) {
@@ -125,9 +126,10 @@ export function checkParity({ spec, mirror }) {
   const fail = (message) => failures.push(message);
 
   const authority = inspectSpec(spec.source);
-  const translation = inspectSpec(mirror.source);
+  const translation = mirror ? inspectSpec(mirror.source) : null;
 
   for (const [label, facts] of [["authority", authority], ["mirror", translation]]) {
+    if (!facts) continue;
     if (facts.fences % 2 !== 0) {
       fail(`${label}: code fences are unbalanced (${facts.fences}) — a fence was opened and never closed`);
     }
@@ -140,13 +142,27 @@ export function checkParity({ spec, mirror }) {
     }
   }
 
-  // 1. Mirror sections must exist in the authority.
+  // 3. Cross-references must resolve. In single-authority mode this is the whole
+  //    gate: the drift this catches is a cited section that does not exist.
+  //    Some §-references deliberately point at *other* documents (e.g.
+  //    `docs/guide/…` §3.5), so a citation is only checked when the text right
+  //    before it does not name a different file — otherwise the gate would
+  //    demand that this SPEC contain sections belonging to a guide.
   const authorityNumbers = new Set(authority.headings.map((h) => h.number));
+  for (const citation of [...authority.citations].sort()) {
+    if (authorityNumbers.has(citation)) continue;
+    if (citesAnotherDocument(spec.source, citation)) continue;
+    fail(`authority: cross-reference §${citation} does not resolve to any section in this file`);
+  }
+
+  if (!translation) return failures;
+
+  // 1. Mirror sections must exist in the authority.
   for (const heading of translation.headings) {
     if (!authorityNumbers.has(heading.number)) {
       fail(
         `mirror: §${heading.number} ("${heading.title}") does not exist in the authority — ` +
-          `the English SPEC is the sole authority, so a section that lives only in the mirror cannot be cited or corrected`,
+          `the SPEC is the sole authority, so a section that lives only in the mirror cannot be cited or corrected`,
       );
     }
   }
@@ -154,6 +170,7 @@ export function checkParity({ spec, mirror }) {
   // 2. Gap ordinals: strictly increasing, unique, contiguous, and identical
   //    per section number across the two files.
   for (const [label, facts] of [["authority", authority], ["mirror", translation]]) {
+    if (!facts) continue;
     const ordinals = facts.gaps.map((g) => g.ordinal);
     if (ordinals.length === 0) continue;
     for (let i = 1; i < ordinals.length; i += 1) {
@@ -190,11 +207,6 @@ export function checkParity({ spec, mirror }) {
   //    different file — otherwise the gate would demand that this SPEC contain
   //    sections belonging to a guide.
   const authorityLines = spec.source.split("\n");
-  for (const citation of [...authority.citations].sort()) {
-    if (authorityNumbers.has(citation)) continue;
-    if (citesAnotherDocument(spec.source, citation)) continue;
-    fail(`authority: cross-reference §${citation} does not resolve to any section in this file`);
-  }
   void authorityLines;
 
   return failures;
@@ -204,21 +216,25 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const read = (rel) => stripFrontMatter(readFileSync(path.join(root, rel), "utf8"));
   let spec;
-  let mirror;
+  let mirror = null;
   try {
     spec = { path: options.spec, source: read(options.spec) };
-    mirror = { path: options.mirror, source: read(options.mirror) };
+    if (options.mirror) mirror = { path: options.mirror, source: read(options.mirror) };
   } catch (error) {
-    console.error(`✗ cannot read SPEC pair: ${error.message}`);
+    console.error(`✗ cannot read SPEC${options.mirror ? " pair" : ""}: ${error.message}`);
     process.exit(1);
   }
 
   const failures = checkParity({ spec, mirror });
   const authority = inspectSpec(spec.source);
-  const translation = inspectSpec(mirror.source);
 
   console.log(`${spec.path}    sections=${authority.headings.length} gaps=${authority.gaps.length} citations=${authority.citations.size}`);
-  console.log(`${mirror.path}    sections=${translation.headings.length} gaps=${translation.gaps.length}`);
+  if (mirror) {
+    const translation = inspectSpec(mirror.source);
+    console.log(`${mirror.path}    sections=${translation.headings.length} gaps=${translation.gaps.length}`);
+  } else {
+    console.log("单权威模式（无镜像可比）：只校验自身交叉引用、章节唯一性与代码栅栏配平。");
+  }
 
   if (failures.length > 0) {
     console.error(`\n结果：失败（${failures.length} 项）`);

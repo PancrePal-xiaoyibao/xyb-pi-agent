@@ -1,7 +1,7 @@
 /**
  * Trial-query orchestrator: terminal-state and aggregation contract tests.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §3.3, §3.4, §5.2, §5.3
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §3.3, §3.4, §5.2, §5.3
  *
  * These are the rules that decide what a dispatch *means*, so they are tested
  * without a host, a plugin, or a network. The failure they exist to prevent is

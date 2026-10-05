@@ -1,7 +1,7 @@
 /**
  * Trial-query fan-out: terminal-state adjudication and aggregation.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §3.3, §5.2, §5.3
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §3.3, §5.2, §5.3
  *
  * Pure functions only — no network, no filesystem, no clock beyond what the
  * caller injects. The orchestrator owns dispatch; this module owns the rules

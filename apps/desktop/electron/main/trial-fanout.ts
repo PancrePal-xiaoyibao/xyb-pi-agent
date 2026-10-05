@@ -1,7 +1,7 @@
 /**
  * Trial-query fan-out broker.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §4.4
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §4.4
  *
  * This is the seam between "the orchestrator decided to ask five sources" and
  * "host-core actually admitted five tool calls". It lives in Electron because

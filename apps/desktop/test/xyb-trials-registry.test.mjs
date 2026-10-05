@@ -1,7 +1,7 @@
 /**
  * Trial-source registry contract tests.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §4.1, §6.2, §6.5, §10「来源扩展框架」
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §4.1, §6.2, §6.5, §10「来源扩展框架」
  *
  * The registry is the only place a source, plugin, server, tool, timeout or
  * parameter shape is named. These tests pin those names to the *real* tools:

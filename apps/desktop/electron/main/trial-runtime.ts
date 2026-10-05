@@ -2,7 +2,7 @@
  * Runtime probes for sources that need something installed before they can
  * answer at all — currently the vendored WHO ICTRP Python service.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §15.3.5, §15.3.6.1,
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §15.3.5, §15.3.6.1,
  * §15.9 criteria 2, 3 and 10.
  *
  * Why this exists as a separate step rather than "let the dispatch fail":
