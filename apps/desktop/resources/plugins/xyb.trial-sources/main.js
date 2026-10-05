@@ -35,6 +35,9 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 
+const { fetchCorpus, mountCorpusPackages, readPackageMeta } = require("./corpus.js");
+const seedPacks = require("./seeds.js");
+
 const DISCLAIMER =
   "以下为公开试验登记信息的整理，供参考，不能替代医生判断，也不构成入组建议或用药建议。";
 
@@ -158,6 +161,78 @@ function defaultCdeDir() {
   return path.join(os.homedir(), ".xyb-chinadrugtrials", "output", "胰腺癌", "json");
 }
 
+/** CDE 语料的安装根（`<根>/xyb_cde_pancreatic/胰腺癌/`），挂在 MCP 读取路径下。 */
+function defaultCdeCorpusDir() {
+  return path.join(os.homedir(), ".xyb-chinadrugtrials", "corpora");
+}
+
+/**
+ * CDE 冷启动语料：下载 → 校验 → 解压 → 原子替换 → 挂载。
+ *
+ * ## 这一步与随包种子的分工
+ *
+ * 随包种子（`data/chinadrugtrials/`，139 条纯 JSON）解决「没网也能查」，代价是
+ * 应用体积且只能随版本更新。语料包解决「数据可以独立更新、且带全 raw/ 与 word/
+ * 证据」，代价是需要联网。两者都写入之后再挂载，所以最差情况仍是种子那份可用。
+ *
+ * ## 为什么失败不算错误
+ *
+ * 冷启动下载可能因网络、代理、公司防火墙失败。它只是**优化路径**：插件里还有
+ * 联网抓取和随包种子两条路。所以这里一律返回结构化结果、绝不抛错，状态里如实
+ * 写下失败到哪一步（`reason`），让界面能说清「这次用的是哪份数据」，而不是把
+ * 一个网络问题渲染成「试验数据不存在」。
+ */
+async function ensureCdeCorpus(settings) {
+  // 挂载点必须与 MCP 的 OUTPUT_ROOT 一致，否则挂了也读不到。
+  //
+  // `defaultCdeDir()` 是 `<根>/output/胰腺癌/json`，而 OUTPUT_ROOT 是 `<根>/output`。
+  // 从它往上退**三级**（json → 胰腺癌 → output）才到 OUTPUT_ROOT；退两级会停在
+  // `<根>/output`，再拼一次 "output" 就成了 `<根>/output/output`——MCP 从不扫这个
+  // 目录，于是下载成功、挂载"成功"、查询永远 0 条。
+  const dataRoot =
+    String(settings.cdeDataDir ?? "").trim() || path.dirname(path.dirname(path.dirname(defaultCdeDir())));
+  const corpusDir = String(settings.cdeCorpusDir ?? "").trim() || defaultCdeCorpusDir();
+  const outputRoot = path.join(dataRoot, "output");
+
+  // `apply: true` 不能省。fetchCorpus 在不带 apply 时是纯试运行
+  // （返回 `ok: false, reason: "DRY_RUN"`），只报告「会下载什么」。少了这个参数，
+  // 整条冷启动路径会变成一次静默的空操作：不下载、不报错，用户看到的却是「已就绪」，
+  // 而磁盘上什么也没有。
+  const fetched = await fetchCorpus({
+    corpusId: "xyb_cde_pancreatic",
+    destDir: corpusDir,
+    apply: true,
+  });
+
+  // 下载失败时不挂载：挂载一个不存在的目录只会造出断链，把「没下载成功」
+  // 伪装成「挂好了但查不到」。
+  if (!fetched.ok) {
+    return { ok: false, reason: fetched.reason ?? "FETCH_FAILED", step: "fetch", fetched };
+  }
+
+  const mounted = await mountCorpusPackages({
+    packageDirs: fetched.packageDirs ?? [],
+    outputRoot,
+    label: "chinadrugtrials",
+  });
+
+  const packages = (fetched.packageDirs ?? []).map((dir) => ({
+    dir,
+    meta: readPackageMeta(dir),
+  }));
+
+  return {
+    ok: mounted.ok,
+    reason: mounted.ok ? "READY" : mounted.reason,
+    step: mounted.ok ? "done" : "mount",
+    corpusDir,
+    outputRoot,
+    fetched,
+    mounted,
+    packages,
+  };
+}
+
 /**
  * ICTRP 快照的运行时目录。
  *
@@ -173,10 +248,21 @@ function defaultIctrpDir() {
 }
 
 /**
- * 通用种子复制：目录级、不存在才复制、失败不抛错。
+ * 通用种子复制：**按文件合并**、已存在的不覆盖、失败不抛错。
  *
  * 与 `ensureVeevaSeed` 同构，但作用于「若干文件」而非单个二进制。复制前先写
  * `<目标>.seed-tmp` 再 rename —— 与 Veeva 一致，半个种子不得冒充完整种子。
+ *
+ * ## 为什么是「按文件合并」而不是「目录在就跳过」
+ *
+ * 原实现是 `if (fs.existsSync(targetDir)) return ALREADY_PRESENT`——目录一存在就
+ * 整体跳过。那在**首次安装**时没问题，在**升级**时是错的：目标目录早就被上一次
+ * 冷启动建出来了，于是无论随包种子更新了多少条记录，一个字节都不会落地，而状态
+ * 却报 `ALREADY_PRESENT`（看着像「已经是最新的」）。这正是「下载报成功、数据没
+ * 变化」那类缺陷的形态。
+ *
+ * 改成逐文件判断之后语义变得准确：**缺的补上，已有的不动**。用户自己抓的记录
+ * （可能比种子更全）仍然绝不会被覆盖——那也是原来那条注释真正想保证的事。
  *
  * 返回结构化结果而不是抛错：种子复制是优化路径，失败不能阻断插件加载。
  */
@@ -186,11 +272,6 @@ async function ensureJsonSeed(options) {
   if (!fs.existsSync(seedPath)) {
     return { ok: false, reason: "NO_SEED", label, seedPath, targetDir };
   }
-  if (fs.existsSync(targetDir)) {
-    // 目录已存在即视为「用户已有自己的数据」——可能是种子复制的，也可能是
-    // 用户自己抓的更全的归档。两种情况都不覆盖。
-    return { ok: true, reason: "ALREADY_PRESENT", label, targetDir };
-  }
 
   try {
     await fsp.mkdir(targetDir, { recursive: true });
@@ -198,21 +279,69 @@ async function ensureJsonSeed(options) {
 
     if (stat.isDirectory()) {
       const entries = await fsp.readdir(seedPath);
+      const copied = [];
+      const kept = [];
+      const failed = [];
       for (const entry of entries) {
         const src = path.join(seedPath, entry);
         const dest = path.join(targetDir, entry);
-        const tmp = `${dest}.seed-tmp`;
-        await fsp.copyFile(src, tmp);
-        await fsp.rename(tmp, dest);
+        try {
+          const srcStat = await fsp.stat(src);
+          // 只处理常规文件。种子目录里若有子目录，那属于另一套语义，交给
+          // 专门的复制路径，不在「逐条记录合并」这件事里悄悄处理。
+          if (!srcStat.isFile()) continue;
+
+          // 已存在即保留：可能是种子复制的，也可能是用户自己抓的更全的记录。
+          // 两种情况都不覆盖——这是逐文件版本真正要守住的那条规则。
+          let exists = false;
+          try {
+            await fsp.access(dest);
+            exists = true;
+          } catch {
+            exists = false;
+          }
+          if (exists) {
+            kept.push(entry);
+            continue;
+          }
+
+          const tmp = `${dest}.seed-tmp`;
+          await fsp.copyFile(src, tmp);
+          await fsp.rename(tmp, dest);
+          copied.push(entry);
+        } catch (error) {
+          await fsp.rm(`${dest}.seed-tmp`, { force: true }).catch(() => undefined);
+          failed.push({ entry, error: error?.message ?? String(error) });
+        }
       }
-      return { ok: true, reason: "SEEDED", label, targetDir, files: entries.length };
+      // `SEEDED` 只在真的写下新字节时才报，否则「成功」会掩盖「什么也没发生」。
+      const reason = copied.length > 0 ? "SEEDED" : "ALREADY_PRESENT";
+      return {
+        ok: failed.length === 0,
+        reason,
+        label,
+        targetDir,
+        files: copied.length,
+        kept: kept.length,
+        failed,
+      };
     }
 
     const dest = path.join(targetDir, path.basename(seedPath));
+    let exists = false;
+    try {
+      await fsp.access(dest);
+      exists = true;
+    } catch {
+      exists = false;
+    }
+    if (exists) {
+      return { ok: true, reason: "ALREADY_PRESENT", label, targetDir, files: 0, kept: 1, failed: [] };
+    }
     const tmp = `${dest}.seed-tmp`;
     await fsp.copyFile(seedPath, tmp);
     await fsp.rename(tmp, dest);
-    return { ok: true, reason: "SEEDED", label, targetDir, files: 1 };
+    return { ok: true, reason: "SEEDED", label, targetDir, files: 1, kept: 0, failed: [] };
   } catch (error) {
     return {
       ok: false,
@@ -441,30 +570,60 @@ let cdeSeedStatus = null;
  */
 let ictrpSeedStatus = null;
 
+/** 最近一次 CDE 语料下载/挂载结果，供面板展示（onLoad 里赋值）。 */
+let corpusStatus = null;
+
 /** 最近一次 ChiCTR 运行时粗筛结果，供面板展示（onLoad 里赋值）。 */
 let chictrProbe = null;
 
 async function onLoad() {
+  // 先把设置读一次：下面几步都要用，重复读会让「用户改了设置之后哪一步生效」
+  // 变得依赖调用顺序。
+  let settings = {};
+  try {
+    settings = (await pi.plugin.getSettings()) ?? {};
+  } catch (error) {
+    settings = {};
+    seedStatus = { ok: false, reason: "SETTINGS_FAILED", error: error?.message ?? String(error) };
+  }
+
   // 把随包分发的 Veeva 索引放到用户可写的目录。失败不阻断加载 —— 用户仍可
   // 用渠道 1/2/4，Veeva 只是暂时没有本地索引。
   try {
-    const settings = (await pi.plugin.getSettings()) ?? {};
     seedStatus = await ensureVeevaSeed({ dataDir: settings.veevaDataDir });
   } catch (error) {
     seedStatus = { ok: false, reason: "COPY_FAILED", error: error?.message ?? String(error) };
   }
 
+  // 离线语料：下载 → 校验 → 解压 → 原子替换 → 挂载。
+  //
+  // 与「随包种子复制」是**两条独立的路**，不能互相替代：
+  //   - 随包种子给的是离线兜底，代价是应用体积、且只随版本更新；
+  //   - 语料下载给的是可独立更新的完整数据包（含 raw/ 与 word/），代价是需要联网。
+  //
+  // 两者都写完才去挂载：种子复制保证「至少有一份能用」，下载成功则提供更全的一份。
+  // 任何一步失败都不阻断加载——CDE 渠道还有联网抓取这条路。
+  try {
+    corpusStatus = await ensureCdeCorpus(settings);
+  } catch (error) {
+    corpusStatus = {
+      ok: false,
+      reason: "CORPUS_FAILED",
+      error: error?.message ?? String(error),
+    };
+  }
+
   // ChiCTR 与 CDE 的结构化 JSON 种子。同样只补不覆盖、失败不阻断。
   try {
-    const settings = (await pi.plugin.getSettings()) ?? {};
+    const seedSettings = settings ?? (await pi.plugin.getSettings()) ?? {};
     chictrSeedStatus = await ensureJsonSeed({
       seedPath: SEED_CHICTR,
-      targetDir: String(settings.chictrSeedDir ?? "").trim() || defaultChictrDir(),
+      targetDir: String(seedSettings.chictrSeedDir ?? "").trim() || defaultChictrDir(),
       label: "chictr",
     });
     cdeSeedStatus = await ensureJsonSeed({
       seedPath: SEED_CDE_DIR,
-      targetDir: String(settings.cdeSeedDir ?? "").trim() || defaultCdeDir(),
+      targetDir: String(seedSettings.cdeSeedDir ?? "").trim() || defaultCdeDir(),
       label: "chinadrugtrials",
     });
   } catch (error) {
@@ -518,9 +677,14 @@ function panelPayload() {
     chictr: chictrProbe,
     chictrSeed: chictrSeedStatus,
     cdeSeed: cdeSeedStatus,
+    cdeCorpus: corpusStatus,
     chictrSeedMeta: readChictrSeedMeta(),
     ictrpSeed: ictrpSeedStatus,
     ictrpSeedMeta: readIctrpSeedMeta(),
+    // 五个种子包的当前状态（已装/未装/条数）与网络提示。界面据此渲染
+    // 「安装 / 更新」按钮，并**在用户点击之前**就把 GitHub 需要 VPN 讲清楚。
+    seeds: seedPacks.describeSeeds(),
+    seedNetworkNotice: seedPacks.SEED_NETWORK_NOTICE,
     disclaimer: DISCLAIMER,
   };
 }
@@ -530,10 +694,39 @@ async function onUnload() {
 }
 
 /** 面板自定义通道：宿主未实现的 channel 会转发到这里。 */
-async function onPanelInvoke(channel) {
+async function onPanelInvoke(channel, params) {
   if (channel === "xyb.trial-sources.list") {
     return panelPayload();
   }
+
+  // 安装前探测：只读，不下载。界面拿它决定要不要弹「会覆盖你自己抓的数据」。
+  if (channel === "xyb.trial-sources.seed-plan") {
+    const corpusId = String((params && params.corpusId) || "");
+    if (!corpusId) {
+      const err = new Error("缺少 corpusId");
+      err.code = "INVALID_ARGUMENT";
+      throw err;
+    }
+    return seedPacks.planInstall(corpusId);
+  }
+
+  // 执行安装 / 更新。`params.consent === true` 是界面替用户做出的同意声明；
+  // 缺少它而目标已有数据时，seeds.js 会拒绝——这条检查在那边也有一份，
+  // 两处都要有：界面负责问，模块负责不被绕过。
+  if (channel === "xyb.trial-sources.seed-install") {
+    const corpusId = String((params && params.corpusId) || "");
+    if (!corpusId) {
+      const err = new Error("缺少 corpusId");
+      err.code = "INVALID_ARGUMENT";
+      throw err;
+    }
+    const result = await seedPacks.applyInstall(corpusId, {
+      consent: params.consent === true,
+    });
+    // 装完立刻重探状态，避免界面拿着过期数字渲染。
+    return { ...result, seeds: seedPacks.describeSeeds() };
+  }
+
   const err = new Error(`channel not supported: ${channel}`);
   err.code = "NOT_FOUND";
   throw err;
@@ -545,6 +738,7 @@ module.exports = {
   onPanelInvoke,
   _internals: {
     SOURCES,
+    seedPacks,
     CDE_NOTE,
     DISCLAIMER,
     ensureVeevaSeed,
@@ -573,6 +767,9 @@ module.exports = {
     },
     get cdeSeedStatus() {
       return cdeSeedStatus;
+    },
+    get cdeCorpusStatus() {
+      return corpusStatus;
     },
     get ictrpSeedStatus() {
       return ictrpSeedStatus;

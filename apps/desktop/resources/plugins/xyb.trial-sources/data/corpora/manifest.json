@@ -1,0 +1,70 @@
+{
+  "$comment": [
+    "离线数据包 Release 资产清单，由 `xyb-fetch-corpus.mjs`（`fetch-corpus`）校验。",
+    "`bytes` 与 `sha256` 就是契约：不匹配的下载会被拒绝，且原有数据原封不动。",
+    "",
+    "`basis` 是**必需**的，记录该资产为何可以被再分发：",
+    "  upstream_public - 数据集本身公开且可匿名下载",
+    "  community_owned - 社区自己的抓取成果，因作者持有该产物的权利而分发。",
+    "                    上游站点是否需要凭证会话，与这条依据无关。",
+    "缺少 `basis` 的资产在安装时被拒绝；两种依据不得混为一谈，否则再分发的边界",
+    "就悄悄消失了。",
+    "",
+    "重新生成：",
+    "  node scripts/xyb-pack-corpus.mjs --corpus <id> --write-manifest",
+    "再把 tar.gz 上传到 `url` 里指定的 GitHub Release，并提交本文件。",
+    "永远不要手工编辑 sha256。"
+  ],
+  "corpora": {
+    "xyb_cde_pancreatic": {
+      "url": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/download/xyb_cde_pancreatic-2026-10-05/xyb_cde_pancreatic.tar.gz",
+      "bytes": 11032155,
+      "sha256": "d1ccdac0ef5462a62bf43a5ec5b341ef7f0cd08a297d138d9c2617c757b482fb",
+      "extractDir": "xyb_cde_pancreatic",
+      "version": "2026-10-05",
+      "title": "小胰宝 CDE 胰腺癌社区归档",
+      "basis": "community_owned",
+      "note": "小胰宝社区自行抓取并整理的 CDE 胰腺癌数据包（结构化 JSON + 原始 HTML 快照 + 网页导出 DOC/DOCX）；分发依据是社区对该抓取成果自身拥有分发权。上游站点为受控来源，本包不是上游官方数据集，登记信息可能被随时修订。"
+    },
+    "chictr_pancreatic": {
+      "url": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/download/chictr_pancreatic-2026-10-05/chictr_pancreatic.tar.gz",
+      "bytes": 730838,
+      "sha256": "8ab57e4b73b7beb54b64955e28d45f30c0262cae20ffdcbae135ef0f977dc4ec",
+      "extractDir": "chictr_pancreatic",
+      "version": "2026-10-05",
+      "title": "小胰宝 ChiCTR 胰腺癌快照",
+      "basis": "community_owned",
+      "note": "小胰宝社区抓取的 ChiCTR（中国临床试验注册中心）胰腺癌结构化快照，468 条。分发依据是社区对该抓取成果自身拥有分发权。**只覆盖胰腺癌**：本地 0 命中只能说明「快照里没有」，不能说明「没有相关试验」。"
+    },
+    "cde_pancreatic": {
+      "url": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/download/cde_pancreatic-2026-10-05/cde_pancreatic.tar.gz",
+      "bytes": 1075692,
+      "sha256": "d3c314aecce5268feeee2decc23b33832d4feb084d337e38b3656b84b9e0aeaf",
+      "extractDir": "cde_pancreatic",
+      "version": "2026-10-05",
+      "title": "小胰宝 CDE 胰腺癌纯 JSON 种子",
+      "basis": "community_owned",
+      "note": "小胰宝社区抓取的 CDE 胰腺癌结构化 JSON（139 条，不含原始页面与 DOC 导出）。这是「没网也能查」的兜底数据；需要证据文件时请装完整归档。"
+    },
+    "ictrp_pancreatic_cancer": {
+      "url": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/download/ictrp_pancreatic_cancer-2026-10-05/ictrp_pancreatic_cancer.tar.gz",
+      "bytes": 1495017,
+      "sha256": "0211252d850b537b838e4d427277c1b8eb4885e72dd2b8cc51879f896880af76",
+      "extractDir": "ictrp_pancreatic_cancer",
+      "version": "2026-10-05",
+      "title": "WHO ICTRP 胰腺癌快照",
+      "basis": "upstream_public",
+      "note": "WHO ICTRP 导出的胰腺癌检索结果快照（6262 条命中；上游自报 6952，本包是下界）。WHO 条款要求标注来源并显示 WHO 处理该数据的日期，且不得主张专有权利或用于商业用途；界面必须随数据一并显示 attribution 与 ictrp_export_date。"
+    },
+    "veeva_ctv": {
+      "url": "https://github.com/PancrePal-xiaoyibao/xyb-pi-agent/releases/download/veeva_ctv-2026-10-05/veeva_ctv.tar.gz",
+      "bytes": 11420303,
+      "sha256": "6384edad19c8f278b29728ae7e30b298c8ed94cb8b80000396556b65cd98e02f",
+      "extractDir": "veeva_ctv",
+      "version": "2026-10-05",
+      "title": "Veeva CTV 本地索引",
+      "basis": "upstream_public",
+      "note": "Veeva CTV（Clinical Trials Veeva）公开试验索引的本地 SQLite 副本。上游为公开站点地图数据；刷新请用 ctv-mcp-server 的 sync_sitemap / backfill_details。"
+    }
+  }
+}

@@ -54,6 +54,42 @@
       .can { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.8; }
       .can li { margin: 0; }
       .note { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.8; }
+
+      /* 种子包区块 */
+      .section { margin-top: 20px; }
+      .section > h2 { margin: 0 0 4px; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+      .section > .hint { margin-bottom: 10px; }
+      .net {
+        margin: 10px 0 12px; padding: 9px 11px; border-left: 2px solid #b8791f;
+        background: color-mix(in srgb, #b8791f 8%, transparent);
+        border-radius: 0 8px 8px 0; font-size: 11.5px; line-height: 1.7;
+      }
+      .seed { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-bottom: 9px; }
+      .seed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+      .seed h3 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+      .state { font-size: 11px; color: var(--muted); white-space: nowrap; }
+      .state.on { color: var(--mint); }
+      .state.stale { color: #b8791f; }
+      .seed .path { color: var(--muted); font-size: 10.5px; margin-top: 3px; word-break: break-all; }
+      .seed-actions { margin-top: 9px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+      button {
+        font: inherit; font-size: 11.5px; padding: 4px 13px; border-radius: 7px;
+        border: 1px solid var(--mint); background: transparent; color: var(--mint);
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) { background: var(--soft); }
+      button:disabled { opacity: .5; cursor: default; }
+      button.primary { background: var(--mint); color: #fff; }
+      .msg { font-size: 11px; line-height: 1.7; }
+      .msg.err { color: #c0392b; }
+      .msg.ok { color: var(--mint); }
+      .consent {
+        margin-top: 9px; padding: 10px 11px; border: 1px solid #b8791f; border-radius: 8px;
+        font-size: 11.5px; line-height: 1.75;
+      }
+      .consent ul { margin: 6px 0; padding-left: 16px; }
+      .consent code { font-size: 10.5px; word-break: break-all; }
+      .consent-actions { display: flex; gap: 8px; margin-top: 8px; }
     </style>
   </head>
   <body>
@@ -68,6 +104,15 @@
       <div class="card">
         <h3>正在读取…</h3>
       </div>
+    </div>
+
+    <div class="section" id="seed-section" hidden>
+      <h2>离线数据包</h2>
+      <div class="hint">
+        这些数据包装进本机后，没有网络也能查。安装会从 GitHub 下载，覆盖同名旧文件前会先问你。
+      </div>
+      <div class="net" id="net-notice"></div>
+      <div id="seed-list"></div>
     </div>
 
     <div class="note" id="note"></div>
@@ -119,10 +164,130 @@
         note.appendChild(el("div", null, disclaimer || ""));
       }
 
+      /** 把「已装 / 未装」渲染成一句人话，而不是让用户去猜 null 是什么意思。 */
+      function describeState(state, busy) {
+        if (busy) return { text: "处理中…", cls: "state" };
+        if (!state || state.installed === null || state.installed === undefined) {
+          return { text: "状态未知", cls: "state" };
+        }
+        if (!state.installed) return { text: "未安装", cls: "state" };
+        // 条数拿不准时**不写数字**。一个错的「139 条」会让用户以为数据在。
+        const count = state.records == null ? "" : `${state.records} 条`;
+        const stale = state.stale ? " · 已过期，建议更新" : "";
+        return {
+          text: ["已安装", count].filter(Boolean).join(" · ") + stale,
+          cls: state.stale ? "state stale" : "state on",
+        };
+      }
+
+      function renderSeeds(seeds, notice) {
+        const section = document.getElementById("seed-section");
+        const list = document.getElementById("seed-list");
+        if (!Array.isArray(seeds) || seeds.length === 0) {
+          section.hidden = true;
+          return;
+        }
+        section.hidden = false;
+        document.getElementById("net-notice").textContent = notice || "";
+        list.textContent = "";
+
+        for (const seed of seeds) list.appendChild(seedCard(seed));
+      }
+
+      function seedCard(seed) {
+        const card = el("div", "seed");
+        card.dataset.corpusId = seed.corpusId;
+
+        const head = el("div", "seed-head");
+        head.appendChild(el("h3", null, seed.title));
+        const state = el("span", describeState(seed.state, false).cls, describeState(seed.state, false).text);
+        head.appendChild(state);
+        card.appendChild(head);
+
+        if (seed.runtimeDir) card.appendChild(el("div", "path", `读取位置：${seed.runtimeDir}`));
+
+        const actions = el("div", "seed-actions");
+        const button = el("button", seed.state && seed.state.installed ? null : "primary",
+          seed.state && seed.state.installed ? "更新" : "安装");
+        const msg = el("span", "msg", "");
+        actions.appendChild(button);
+        actions.appendChild(msg);
+        card.appendChild(actions);
+
+        button.addEventListener("click", () => install(seed.corpusId, card, button, msg, state));
+        return card;
+      }
+
+      /** 覆盖前征求同意。**必须由用户点确认**，不提供「默认同意」。 */
+      function askConsent(card, plan) {
+        const box = el("div", "consent");
+        box.appendChild(el("div", null, "目标位置已有数据，且可能是你自己抓取的："));
+
+        const ul = el("ul");
+        for (const c of plan.conflicts) {
+          const li = el("li");
+          li.appendChild(el("code", null, c.path));
+          if (c.userData) li.appendChild(document.createTextNode("（可能是你自己抓取的数据）"));
+          ul.appendChild(li);
+        }
+        box.appendChild(ul);
+        box.appendChild(el("div", null, "继续将覆盖这些同名旧文件。是否继续？"));
+
+        const row = el("div", "consent-actions");
+        const yes = el("button", "primary", "同意并覆盖");
+        const no = el("button", null, "取消");
+        row.appendChild(yes);
+        row.appendChild(no);
+        box.appendChild(row);
+        card.appendChild(box);
+
+        return new Promise((resolve) => {
+          no.addEventListener("click", () => { box.remove(); resolve(false); });
+          yes.addEventListener("click", () => { box.remove(); resolve(true); });
+        });
+      }
+
+      async function install(corpusId, card, button, msg, state) {
+        button.disabled = true;
+        msg.className = "msg";
+        msg.textContent = "正在检查目标位置…";
+
+        try {
+          // 先探测：无冲突就直接装；有冲突必须拿到用户同意才继续。
+          const plan = await bridge.invoke("xyb.trial-sources.seed-plan", { corpusId });
+          let consent = false;
+          if (plan && plan.needsConsent) {
+            msg.textContent = "";
+            consent = await askConsent(card, plan);
+            if (!consent) { msg.textContent = "已取消，未改动任何文件。"; return; }
+          }
+
+          msg.textContent = "正在下载并校验…（较大数据包可能需要一会儿）";
+          const result = await bridge.invoke("xyb.trial-sources.seed-install", { corpusId, consent });
+
+          if (result && result.ok) {
+            msg.className = "msg ok";
+            msg.textContent = "安装完成。";
+          } else {
+            msg.className = "msg err";
+            msg.textContent = `未完成：${(result && result.reason) || "未知原因"}`;
+          }
+        } catch (e) {
+          // 失败时如实说明**原有数据未改动**，因为这是本流程最要紧的保证。
+          msg.className = "msg err";
+          msg.textContent = `失败：${(e && e.message) || e}（原有数据未被改动）`;
+        } finally {
+          button.disabled = false;
+          // 无论成败都刷新一次状态；装完不刷新会让界面继续显示旧数字。
+          await load();
+        }
+      }
+
       async function load() {
         try {
           const res = await bridge.invoke("xyb.trial-sources.list", {});
           render(res.sources || [], res.cdeNote, res.disclaimer);
+          renderSeeds(res.seeds, res.seedNetworkNotice);
         } catch (e) {
           const list = document.getElementById("list");
           list.textContent = "";
