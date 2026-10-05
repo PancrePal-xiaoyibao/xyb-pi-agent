@@ -30,6 +30,19 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.17.0",
+    date: "2026-10-05",
+    highlights: [
+      "Clinical trial search now covers five registries at once — ClinicalTrials.gov, ChiCTR, Veeva CTV, China's drug trial platform, and WHO ICTRP — and states which of them actually answered, so a partial result is never presented as a complete one.",
+      "WHO ICTRP joins as a fifth source, shipped with an offline snapshot so its results are available even before that service has been set up.",
+      "Trial answers flag when the same study is counted by more than one source, so overlapping registries cannot inflate a total.",
+      "WHO ICTRP returns nothing for Chinese keywords by design, because that registry indexes English metadata only; the answer now says so instead of reporting that no such trials exist.",
+      "A source whose service failed to start reports the real cause — a connection timeout, for instance — rather than a generic \"unavailable in this session\".",
+      "The records assistant turns a patient's notes into a structured summary of their condition and treatment history.",
+    ],
+  },
+
+  {
     version: "0.16.1",
     date: "2026-09-30",
     highlights: [
@@ -882,6 +895,19 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.17.0",
+    date: "2026-10-05",
+    highlights: [
+      "临床试验查询一次覆盖五个注册库：ClinicalTrials.gov、ChiCTR、Veeva CTV、药物临床试验登记与信息公示平台、WHO ICTRP；并会说明本次实际有哪些来源作出回答，部分结果不会被当成完整结果。",
+      "WHO ICTRP 作为第五个来源接入，随包附带离线快照，尚未配置该服务时也能给出结果。",
+      "同一项试验被多个来源同时收录时会给出提示，避免相互重叠的注册库把总数算大。",
+      "WHO ICTRP 只索引英文元数据，用中文关键词查询本就查不到；结果里现在会直接说明这一点，而不再报告成「没有这类试验」。",
+      "某个来源的服务启动失败时会说明真实原因（例如连接超时），不再只说「在当前会话中不可用」。",
+      "资料整理助手能把患者的零散记录整理成病情与治疗经过的结构化摘要。",
+    ],
+  },
+
+  {
     version: "0.16.1",
     date: "2026-09-30",
     highlights: [
@@ -1733,6 +1759,19 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.17.0",
+    date: "2026-10-05",
+    highlights: [
+      "臨床試驗查詢一次涵蓋五個註冊庫：ClinicalTrials.gov、ChiCTR、Veeva CTV、藥物臨床試驗登記與信息公示平台、WHO ICTRP；並會說明本次實際有哪些來源作出回答，部分結果不會被當成完整結果。",
+      "WHO ICTRP 以第五個來源接入，隨套件附帶離線快照，尚未設定該服務時也能給出結果。",
+      "同一項試驗被多個來源同時收錄時會提出提示，避免相互重疊的註冊庫把總數算大。",
+      "WHO ICTRP 只索引英文中繼資料，用中文關鍵字查詢本就查不到；結果中現在會直接說明這一點，而不再回報成「沒有這類試驗」。",
+      "某個來源的服務啟動失敗時會說明真實原因（例如連線逾時），不再只說「在目前工作階段中無法使用」。",
+      "資料整理助手能把病患的零散紀錄整理成病情與治療經過的結構化摘要。",
+    ],
+  },
+
   {
     version: "0.16.1",
     date: "2026-09-30",

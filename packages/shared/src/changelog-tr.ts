@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.0",
+    "date": "2026-10-05",
+    "highlights": [
+      "Klinik araştırma araması artık beş kayıt sistemini birden kapsıyor — ClinicalTrials.gov, ChiCTR, Veeva CTV, Çin'in ilaç araştırmaları kaydı ve WHO ICTRP — ve hangilerinin gerçekten yanıt verdiğini belirtiyor; böylece kısmi bir sonuç asla eksiksiz gibi sunulmuyor.",
+      "WHO ICTRP beşinci kaynak olarak eklendi; çevrimdışı bir anlık görüntüyle birlikte geldiği için bu hizmet kurulmadan önce bile sonuç verebiliyor.",
+      "Aynı çalışma birden fazla kaynakta sayıldığında yanıtlar bunu bildiriyor; böylece birbiriyle örtüşen kayıtlar toplamı şişiremiyor.",
+      "WHO ICTRP yalnızca İngilizce üst veriyi dizinlediği için Çince anahtar sözcüklerle yapı gereği hiçbir şey döndürmüyor; yanıt artık böyle bir çalışma yok diye bildirmek yerine bunu söylüyor.",
+      "Hizmeti başlamamış bir kaynak, genel bir \"bu oturumda kullanılamıyor\" yerine gerçek nedeni — örneğin bir bağlantı zaman aşımını — bildiriyor.",
+      "Kayıt asistanı, bir hastanın notlarını hastalığın ve tedavi geçmişinin yapılandırılmış bir özetine dönüştürüyor.",
+    ],
+  },
+  {
     "version": "0.16.1",
     "date": "2026-09-30",
     "highlights": [

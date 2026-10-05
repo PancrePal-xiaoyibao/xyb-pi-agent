@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.0",
+    "date": "2026-10-05",
+    "highlights": [
+      "La recherche d'essais cliniques couvre désormais cinq registres à la fois — ClinicalTrials.gov, ChiCTR, Veeva CTV, le registre chinois des essais de médicaments et WHO ICTRP — et indique lesquels ont réellement répondu, afin qu'un résultat partiel ne soit jamais présenté comme complet.",
+      "WHO ICTRP rejoint les sources en cinquième position, avec un instantané hors ligne embarqué : ses résultats sont donc disponibles avant même que ce service soit configuré.",
+      "Les réponses signalent qu'une même étude est comptée par plusieurs sources, pour que des registres qui se recoupent ne gonflent pas un total.",
+      "WHO ICTRP ne renvoie rien pour des mots-clés en chinois par construction, ce registre n'indexant que des métadonnées en anglais ; la réponse le dit désormais au lieu d'annoncer qu'aucun essai de ce type n'existe.",
+      "Une source dont le service n'a pas démarré indique la cause réelle — un délai de connexion dépassé, par exemple — plutôt qu'un générique « indisponible dans cette session ».",
+      "L'assistant de dossier transforme les notes d'un patient en un résumé structuré de sa maladie et de son parcours de soins.",
+    ],
+  },
+  {
     "version": "0.16.1",
     "date": "2026-09-30",
     "highlights": [

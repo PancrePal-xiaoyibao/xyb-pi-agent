@@ -5,7 +5,7 @@ export const APP_ID = "org.xiaoyibao.desktop";
 export const APP_NAME = "xyb-pi";
 // 面向用户的完整产品名：设置 → 信息、关于面板。
 export const APP_DISPLAY_NAME = "小胰宝Pi智能助手";
-export const APP_VERSION = "0.16.1";
+export const APP_VERSION = "0.17.0";
 
 export const APP_MENU_COMMANDS = [
   "newTask",

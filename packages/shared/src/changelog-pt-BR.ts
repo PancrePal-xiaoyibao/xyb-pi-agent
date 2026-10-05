@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.17.0",
+    "date": "2026-10-05",
+    "highlights": [
+      "A busca por ensaios clínicos agora cobre cinco registros ao mesmo tempo — ClinicalTrials.gov, ChiCTR, Veeva CTV, o registro chinês de ensaios de medicamentos e o WHO ICTRP — e informa quais deles realmente responderam, de modo que um resultado parcial nunca seja apresentado como completo.",
+      "O WHO ICTRP entra como quinta fonte, com um instantâneo offline incluído, então seus resultados ficam disponíveis antes mesmo de esse serviço ser configurado.",
+      "As respostas avisam quando o mesmo estudo é contado por mais de uma fonte, para que registros sobrepostos não inflem um total.",
+      "O WHO ICTRP não retorna nada com termos em chinês por construção, já que esse registro indexa apenas metadados em inglês; agora a resposta diz isso em vez de informar que não existem tais ensaios.",
+      "Uma fonte cujo serviço não iniciou informa a causa real — um tempo de conexão esgotado, por exemplo — em vez de um genérico \"indisponível nesta sessão\".",
+      "O assistente de prontuário transforma as anotações de um paciente em um resumo estruturado da doença e do histórico de tratamento.",
+    ],
+  },
+  {
     "version": "0.16.1",
     "date": "2026-09-30",
     "highlights": [

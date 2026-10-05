@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.0",
+    "date": "2026-10-05",
+    "highlights": [
+      "Die Suche nach klinischen Studien deckt nun fünf Register gleichzeitig ab — ClinicalTrials.gov, ChiCTR, Veeva CTV, Chinas Arzneimittel-Studienregister und WHO ICTRP — und nennt die Register, die tatsächlich geantwortet haben; ein Teilergebnis wird damit nie als vollständiges ausgegeben.",
+      "WHO ICTRP kommt als fünfte Quelle hinzu, mit einem mitgelieferten Offline-Abzug, sodass Ergebnisse auch vor der Einrichtung dieses Dienstes vorliegen.",
+      "Antworten weisen darauf hin, wenn dieselbe Studie von mehreren Quellen gezählt wird, damit überlappende Register eine Gesamtzahl nicht aufblähen.",
+      "WHO ICTRP liefert bei chinesischen Suchbegriffen bauartbedingt nichts, da dieses Register nur englische Metadaten indexiert; die Antwort sagt das nun, statt zu melden, es gebe keine solchen Studien.",
+      "Eine Quelle, deren Dienst nicht startete, nennt den echten Grund — etwa eine Zeitüberschreitung — statt eines allgemeinen \"in dieser Sitzung nicht verfügbar\".",
+      "Der Akten-Assistent verwandelt Notizen einer Patientin oder eines Patienten in eine strukturierte Zusammenfassung von Erkrankung und Behandlungsverlauf.",
+    ],
+  },
+  {
     "version": "0.16.1",
     "date": "2026-09-30",
     "highlights": [
