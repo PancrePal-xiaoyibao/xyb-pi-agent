@@ -284,6 +284,54 @@ test("an explicit zero count is a real zero", () => {
   assert.deepEqual(extractRecords({ count: 0 }), []);
 });
 
+test("a Veeva CTV success envelope is read, not thrown away as unrecognised", () => {
+  // Verbatim shape of a LIVE successful `search_studies` answer from
+  // ctv-mcp-server@0.1.0 over a fully indexed local db. The keys are the point:
+  // this envelope has no `records`/`trials`/`studies`/`results`, so before
+  // `hits` was recognised every working Veeva search threw "unrecognised
+  // envelope" and dropped out of the coverage count — a source that answered
+  // correctly was reported to the user as failed.
+  const hits = [
+    { utn: "UTN000609425", nct: "NCT07810309", briefTitle: "Metabolic Impact of Pancreatic Duct Decompression" },
+    { utn: "UTN000499432", nct: "NCT06388967", briefTitle: "Pancreatic Cancer Detection Consortium" },
+  ];
+  const liveEnvelope = {
+    total_matched: 302,
+    returned: 2,
+    offset: 0,
+    query: { keyword: "pancreatic", limit: 2, offset: 0 },
+    coverage: { indexed_studies: 1434, detail_coverage: "1434/1434" },
+    notice: "结果来自本地子集索引（覆盖 1434 条），不代表 ctv.veeva.com 全集。",
+    hits,
+  };
+  assert.deepEqual(extractRecords(liveEnvelope), hits, "必须解出 hits，而不是把成功当成格式异常");
+  // And through the MCP TextContent wrapper it really arrives in.
+  assert.deepEqual(extractRecords(asMcpText(liveEnvelope)), hits);
+});
+
+test("a Veeva zero-match answer is a real zero, not an absent envelope", () => {
+  // `total_matched: 0` ships `hits: []`. Reading the count before the array
+  // would turn "this source answered, with nothing" into "I cannot read this".
+  const zero = { total_matched: 0, returned: 0, offset: 0, coverage: { indexed_studies: 1434 }, hits: [] };
+  assert.deepEqual(extractRecords(zero), []);
+  assert.deepEqual(extractRecords(asMcpText(zero)), []);
+});
+
+test("a live Veeva envelope survives interpretDispatchResult as records", () => {
+  // End of the same path the broker takes: the source must come back QUERIED
+  // with its rows, not FAILED.
+  const envelope = {
+    total_matched: 1,
+    returned: 1,
+    coverage: { indexed_studies: 1434 },
+    notice: "结果来自本地子集索引。",
+    hits: [{ utn: "UTN000488660", nct: "NCT06250803" }],
+  };
+  const outcome = interpretDispatchResult(sourceByKey("veeva_ctv"), okResult(asMcpText(envelope)));
+  assert.equal(outcome.records.length, 1);
+  assert.equal(outcome.records[0].utn, "UTN000488660");
+});
+
 test("an unrecognised envelope throws instead of reporting zero results", () => {
   // This is the load-bearing one: "I do not understand this response" must not
   // become "there are no matching trials".

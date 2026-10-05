@@ -383,7 +383,16 @@ export function extractRecords(content: unknown): unknown[] {
   const unwrapped = unwrapToolContent(content);
   if (Array.isArray(unwrapped)) return unwrapped;
   const bag = asBag(unwrapped);
-  for (const key of ["records", "trials", "studies", "results", "items", "data"]) {
+  // `hits` is Veeva CTV's key for the record list. It is a SUCCESS envelope:
+  // `{total_matched, returned, offset, query, coverage, notice, hits}` arrives
+  // from a working, fully-indexed local database. Omitting it made every
+  // successful Veeva search throw "unrecognised envelope" and drop out of the
+  // coverage count — the fan-out reported a working source as failed, which is
+  // the §15 completeness rule inverted. Order matters only in that `hits` must
+  // be checked before the count-based zero test below: a Veeva answer with
+  // `total_matched: 0` legitimately carries `hits: []`, and reading the count
+  // first would report the empty array as an absent envelope.
+  for (const key of ["records", "trials", "studies", "results", "items", "data", "hits"]) {
     const value = bag[key];
     if (Array.isArray(value)) return value;
   }
