@@ -204,7 +204,12 @@
         head.appendChild(state);
         card.appendChild(head);
 
-        if (seed.runtimeDir) card.appendChild(el("div", "path", `读取位置：${seed.runtimeDir}`));
+        // 写入位置与读取位置都写出来。两者不同时要都显示——否则用户按提示
+        // 去「读取位置」找文件，会发现那里只有挂载出来的内容。
+        if (seed.installDir) card.appendChild(el("div", "path", `安装到：${seed.installDir}`));
+        if (seed.runtimeDir && seed.runtimeDir !== seed.installDir) {
+          card.appendChild(el("div", "path", `实际读取：${seed.runtimeDir}`));
+        }
 
         const actions = el("div", "seed-actions");
         const button = el("button", seed.state && seed.state.installed ? null : "primary",

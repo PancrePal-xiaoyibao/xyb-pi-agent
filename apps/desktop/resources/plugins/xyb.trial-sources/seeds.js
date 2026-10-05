@@ -410,6 +410,10 @@ function describeSeeds() {
       corpusId: seed.corpusId,
       title: seed.title,
       source: seed.source,
+      // 两个位置都给界面：`installDir` 是**写入**的地方（也是冲突发生的
+      // 地方），`runtimeDir` 是**读取**的地方。CDE 完整归档两者不同——
+      // 装进 corpora/ 再挂到 output/——只说一个会让用户找不到文件到底在哪。
+      installDir: seed.installDir(),
       runtimeDir: seed.runtimeDir(),
       state,
     };
