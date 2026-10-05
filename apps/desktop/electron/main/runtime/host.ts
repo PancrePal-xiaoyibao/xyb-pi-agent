@@ -294,6 +294,12 @@ export function createHostRuntime({
                 // never from the model or the query.
                 probeRuntime: (source: import("../trial-fanout").TrialSource) =>
                   probeIctrpRuntime(undefined, source.requiresRuntime ?? "python3"),
+                // A declared server that failed its handshake leaves no tool
+                // behind, which from the catalog's side is indistinguishable
+                // from a server nobody declared. Ask the runtime why, so the
+                // coverage sentence can name the real cause.
+                mcpConnectFailure: (source: import("../trial-fanout").TrialSource) =>
+                  source.serverId ? plugins.mcpConnectFailure(source.serverId) : null,
                 dispatchChild: (child: import("../trial-fanout").ChildCall) =>
                   h.call<{
                     ok?: boolean;

@@ -170,6 +170,56 @@ test("a timeout is TIMEOUT and does not disturb other sources", () => {
   assert.equal(terminalise(chictr, ok([{ id: 1 }])).state, "SUCCESS");
 });
 
+test("an ICTRP empty result is disclosed as a keyword-language artifact, not a finding", () => {
+  // The live behaviour: `ictrp_search {keyword:"胰腺癌"}` returns NO_RESULTS with
+  // `retryable: false` and the upstream hint "This is a genuine zero". But ICTRP
+  // indexes English metadata only, so a Chinese keyword CANNOT match — the zero
+  // is produced by the language of the query, not by the absence of trials.
+  // Rendered as the generic 「查询成功，没有匹配记录」 a patient asking in Chinese
+  // would be told there are no such trials. This is a correctness rule, not
+  // wording: it is the difference between a result and an artifact.
+  const conclusion = terminalise(ictrp, ok([]));
+  assert.equal(conclusion.state, "NO_RESULTS");
+  // Still counted as asked — the source did answer.
+  assert.equal(conclusion.attempted, true);
+  assert.match(conclusion.explanation, /英文/);
+  assert.match(conclusion.explanation, /pancreatic cancer/);
+  // And it must not state the absence as a fact about the world.
+  assert.doesNotMatch(conclusion.explanation, /没有匹配记录。/);
+  // No other source picks up this sentence: it is specific to the aggregator.
+  assert.doesNotMatch(terminalise(chictr, ok([])).explanation, /英文/);
+  assert.doesNotMatch(terminalise(veeva, ok([])).explanation, /英文/);
+  assert.doesNotMatch(terminalise(cde, ok([])).explanation, /英文/);
+});
+
+test("a failed MCP handshake is reported with its real cause, not as a bare unavailability", () => {
+  // Live ChiCTR: the bundled `chictr` server hit `mcp initialize timed out after
+  // 10000ms` (errorCode TIMEOUT) and registered no tools. The catalog can only
+  // see "no such tool", so the user was told 「其查询工具在当前会话中不可用，本次
+  // 没有查询」 — true, and it hides the one thing they could act on. The reason
+  // now travels with the outcome and replaces the cause-free sentence.
+  const conclusion = terminalise(chictr, {
+    toolRegistered: false,
+    toolUnavailableReason: { errorCode: "TIMEOUT", message: "mcp initialize timed out after 10000ms" },
+  });
+  assert.equal(conclusion.state, "NOT_QUERIED");
+  assert.equal(conclusion.reasonCode, "MCP_CONNECT_FAILED");
+  assert.match(conclusion.explanation, /TIMEOUT/);
+  assert.match(conclusion.explanation, /mcp initialize timed out after 10000ms/);
+  // The generic wording must not survive alongside the real cause.
+  assert.doesNotMatch(conclusion.explanation, /在当前会话中不可用/);
+});
+
+test("a missing tool with no known cause keeps the generic unavailability wording", () => {
+  // The distinction the reason must not destroy: absent reason = "not reported",
+  // never "reported as a handshake failure". Inventing a cause is the same class
+  // of error as inventing a date.
+  const conclusion = terminalise(chictr, { toolRegistered: false });
+  assert.equal(conclusion.reasonCode, "TOOL_UNAVAILABLE");
+  assert.match(conclusion.explanation, /在当前会话中不可用/);
+  assert.doesNotMatch(conclusion.explanation, /MCP 服务本次未能连接/);
+});
+
 test("a verification challenge is CHALLENGE_REQUIRED, never worked around", () => {
   const conclusion = terminalise(chictr, { challenge: true });
   assert.equal(conclusion.state, "CHALLENGE_REQUIRED");

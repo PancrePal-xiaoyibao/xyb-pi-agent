@@ -117,6 +117,24 @@ export function terminalise(source: TrialSource, outcome: SourceOutcome): Source
     // Only an explicit `false` means missing — an absent field means the broker
     // did not report registration, which must not be read as absence, or every
     // later branch below becomes unreachable.
+    //
+    // When the broker also knows the server was declared and its MCP handshake
+    // failed, that reason replaces the cause-free sentence. The generic text
+    // described a ChiCTR server whose real failure was a 10s `initialize`
+    // timeout as merely "not available in this session", which is true and
+    // useless: it reads like a transient session quirk rather than a server
+    // that failed to start, and it hides the error the user can act on.
+    const reason = outcome.toolUnavailableReason;
+    if (reason) {
+      const detail = reason.message.trim();
+      return fail(
+        "NOT_QUERIED",
+        "MCP_CONNECT_FAILED",
+        `${source.label} 的 MCP 服务本次未能连接（${reason.errorCode}）` +
+          (detail ? `：${detail}` : "") +
+          `，其查询工具因此未注册，本次没有查询。`,
+      );
+    }
     return fail(
       "NOT_QUERIED",
       "TOOL_UNAVAILABLE",
@@ -713,6 +731,17 @@ function noResultsSentence(source: TrialSource): string {
       return "本地索引中未找到匹配记录；这不等同于“没有相关研究”。";
     case "archived_scrape":
       return "随包归档中未找到匹配记录；归档只覆盖已抓取的病种与时间范围。";
+    case "aggregator_registry":
+      // ICTRP indexes English-language metadata only: a Chinese keyword matches
+      // nothing there *by construction*, and the service reports that inevitable
+      // miss as `NO_RESULTS` with `retryable: false` and the hint "This is a
+      // genuine zero". Rendered as "查询成功，没有匹配记录" that reads as a
+      // finding about the world when it is an artifact of the keyword's
+      // language — a patient asking in Chinese would be told no such trials
+      // exist. The vendored service tree is byte-identical to upstream (gated by
+      // scripts/xyb-check-ictrp-vendor.mjs), so the correction belongs here, in
+      // the layer that owns what the user is actually told.
+      return `${source.label} 没有返回记录。注意：该来源只索引英文元数据，中文关键词必然 0 命中，这不能作为“没有相关试验”的依据；请改用英文关键词（如 pancreatic cancer）重查。`;
     default:
       return `${source.label} 查询成功，没有匹配记录。`;
   }

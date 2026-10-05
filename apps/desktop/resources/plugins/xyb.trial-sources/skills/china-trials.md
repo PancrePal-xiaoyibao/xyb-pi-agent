@@ -23,6 +23,12 @@ description: 当需要调用中国与区域试验数据源时使用——ChiCTR�
 > **两个数分开报**，不得合成一个「共 N 条」。同一条中国试验被 ChiCTR 与 ICTRP 同时命中时，
 > 合并保留 **ChiCTR 直连版**（更实时），ICTRP 版进 `mergedFrom`。
 
+> **中文关键词在 ICTRP 上的 0 命中不是发现，是语言产物**：该库只索引英文元数据，服务会把
+> 这种必然的空集报成 `NO_RESULTS` + `retryable: false` + 「This is a genuine zero」。
+> 这**不得**转述为「没有相关试验」或「查不到」；必须说明是关键词语言不匹配，并改用英文
+> 关键词（如 `pancreatic cancer`）重查。宿主侧编排器已把该来源的 `NO_RESULTS` 文案固定为
+> 这一口径（见 `trial-orchestrator.ts` 的 `noResultsSentence`），照抄即可，不要自行改写。
+
 > 拿不到来源时必须明说「这一处没查到」，不要用其他来源的结果顶上，也不要让患者以为已全覆盖。
 
 ---

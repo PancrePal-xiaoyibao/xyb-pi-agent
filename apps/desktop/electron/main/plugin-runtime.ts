@@ -1299,6 +1299,16 @@ export class PluginRuntime {
   private themeAssets = new Map<string, Map<string, string>>();
   private themeAssetGroups = new Map<string, Map<string, ReadonlyMap<string, string>>>();
   private mcpClients = new Map<string, McpServerClient[]>();
+  /**
+   * Why a declared MCP server ended up toolless, keyed by its empty-suffix
+   * tool key (`<serverId>_`).
+   *
+   * A server whose handshake failed and a server that was never declared both
+   * present as "no tool in the catalog". The trial fan-out can only tell them
+   * apart — and can only tell the user something actionable — if the reason is
+   * kept somewhere it can read. Cleared on a successful connect.
+   */
+  private mcpConnectFailures = new Map<string, { errorCode: string; message: string }>();
   private readonly mcpCalls = new McpCallRegistry();
   private serviceStates = new Map<string, PluginServiceStatus>();
   private restarts = new Map<string, RestartRecord>();
@@ -1392,6 +1402,21 @@ export class PluginRuntime {
 
   getTools(): RegisteredPluginTool[] {
     return [...this.tools.values()];
+  }
+
+  /**
+   * Why a declared MCP server has no tools in the catalog, or null if it never
+   * failed to connect.
+   *
+   * Exists so a caller that sees "the tool is not there" can say which of the
+   * two very different situations it is looking at: the server was never
+   * declared, or it was declared and its handshake failed. The trial fan-out
+   * needs the second case to report a real cause (§15.9 criteria 2 vs 3)
+   * instead of the cause-free 「工具在当前会话中不可用」.
+   */
+  mcpConnectFailure(serverId: string): { errorCode: string; message: string } | null {
+    const found = this.mcpConnectFailures.get(pluginMcpToolKey(serverId, ""));
+    return found ? { ...found } : null;
   }
 
   getSpeechAdapter(protocol: string) {
@@ -3577,10 +3602,25 @@ export class PluginRuntime {
       let tools: Awaited<ReturnType<McpServerClient["connect"]>> = [];
       try {
         tools = await client.connect();
-      } catch {
+      } catch (error) {
         // The client already audited the failure; leave the server toolless.
+        //
+        // But record WHY, because "toolless" on its own is indistinguishable
+        // from "this server was never declared": the fan-out resolves a source
+        // by looking for its tool in the catalog, so a failed handshake and an
+        // absent tool produce the same observation. Without this the coverage
+        // sentence could only say 「其查询工具在当前会话中不可用，本次没有查询」
+        // for a ChiCTR server whose real cause was a 10s `initialize` handshake
+        // timeout — true, but it hides the one detail the user can act on.
+        // Last failure per server wins; a later successful connect clears it.
+        const code = (error as { code?: unknown })?.code;
+        this.mcpConnectFailures.set(pluginMcpToolKey(server.id, ""), {
+          errorCode: typeof code === "string" && code ? code : "MCP_CONNECT_FAILED",
+          message: error instanceof Error ? error.message : String(error ?? ""),
+        });
         continue;
       }
+      this.mcpConnectFailures.delete(pluginMcpToolKey(server.id, ""));
       for (const tool of tools) {
         const name = pluginMcpToolKey(server.id, tool.name);
         const fullName = pluginToolName(pluginId, name);

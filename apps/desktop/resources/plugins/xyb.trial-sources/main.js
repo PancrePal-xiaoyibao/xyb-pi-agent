@@ -114,8 +114,8 @@ const SEED_CHICTR = path.join(__dirname, "data", "chictr", "pancreatic_trials.js
 /**
  * CDE 冷启动种子（`data/chinadrugtrials/`，一记录一 JSON + `index.json`）。
  *
- * 同上：只含胰腺癌，139 条。运行时目录 `~/.xyb-chinadrugtrials/archive/`，
- * 采集器写入、MCP 只读。种子只在目标不存在时复制。
+ * 同上：只含胰腺癌，139 条。运行时目录 `~/.xyb-chinadrugtrials/output/胰腺癌/json/`，
+ * MCP 只读该路径（见 `defaultCdeDir`）。种子只在目标不存在时复制。
  */
 const SEED_CDE_DIR = path.join(__dirname, "data", "chinadrugtrials");
 
@@ -396,7 +396,7 @@ const SOURCES = [
     need: "需本人浏览器会话；首次要准备 Python 环境（可在会话里让助手一键准备）。**胰腺癌有随包冷启动归档**，无需先配置会话即可查",
     seed: {
       path: "data/chinadrugtrials/",
-      runtimeDir: "~/.xyb-chinadrugtrials/archive",
+      runtimeDir: "~/.xyb-chinadrugtrials/output/胰腺癌/json",
       keyword: "胰腺癌",
       coverageNote: "仅含胰腺癌相关试验的冷启动快照，不代表平台的全部收录。其他适应症仍须联网查询。",
     },

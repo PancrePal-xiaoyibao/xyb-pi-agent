@@ -845,6 +845,54 @@ test("a registered ICTRP tool is never probed", async () => {
   assert.equal(calls, 0, "工具在场时不该探测运行时");
 });
 
+test("a source whose MCP handshake failed carries the real cause out of the broker", async () => {
+  // The ChiCTR case: declared server, handshake timed out, so no tool exists in
+  // the catalog. The broker must forward the runtime's recorded reason; without
+  // it the aggregate can only say 「工具在当前会话中不可用」.
+  const failure = { errorCode: "TIMEOUT", message: "mcp initialize timed out after 10000ms" };
+  const fanout = createFanoutBroker({
+    // Both chictr and who_ictrp are missing from the catalog; only chictr has a
+    // recorded handshake failure behind it.
+    resolveTool: (source) => (source.key === "chictr" || source.key === "who_ictrp"
+      ? null
+      : { fullName: `plugin_x_${source.key}` }),
+    // A handshake failure is NOT a missing runtime: the probe correctly reports
+    // it cannot reach a verdict, which is exactly why the reason must come from
+    // a separate channel rather than being re-derived here.
+    probeRuntime: async () => ({ status: "unknown", explanation: "检测超时。" }),
+    mcpConnectFailure: (source) => (source.key === "chictr" ? failure : null),
+    dispatchChild: async () => okResult({ records: [] }),
+  });
+  const stream = await fanout({ sessionId: "s1", turnId: "t1", argsFor: () => ({}) });
+  const chictrStatus = stream.find((c) => c.source === "chictr");
+  assert.equal(chictrStatus.state, "NOT_QUERIED");
+  assert.equal(chictrStatus.reasonCode, "MCP_CONNECT_FAILED");
+  assert.match(chictrStatus.explanation, /mcp initialize timed out after 10000ms/);
+  // A sibling that is also missing a tool, but with NO recorded failure, keeps
+  // the generic wording. This is the load-bearing half: an absent reason must
+  // stay "not reported" rather than being filled in with the neighbour's cause.
+  const ictrpStatus = stream.find((c) => c.source === "who_ictrp");
+  assert.equal(ictrpStatus.reasonCode, "TOOL_UNAVAILABLE");
+  assert.doesNotMatch(ictrpStatus.explanation, /mcp initialize timed out/);
+});
+
+test("a reachable MCP source does not consult the connect-failure record", async () => {
+  // The reason is only meaningful for a source whose tool is missing; a working
+  // server must never inherit a sibling's failure.
+  let asked = 0;
+  const fanout = createFanoutBroker({
+    resolveTool: (source) => ({ fullName: `plugin_x_${source.key}` }),
+    mcpConnectFailure: () => {
+      asked += 1;
+      return { errorCode: "TIMEOUT", message: "x" };
+    },
+    dispatchChild: async () => okResult({ records: [{ id: 1 }] }),
+  });
+  const stream = await fanout({ sessionId: "s1", turnId: "t1", argsFor: () => ({}) });
+  assert.equal(asked, 0, "工具在场时不该查询连接失败记录");
+  assert.ok(stream.every((c) => c.state === "SUCCESS"));
+});
+
 test("a failing source does not lose its fix command on the way to the aggregate", async () => {
   const fanout = createFanoutBroker({
     resolveTool: (source) => (source.key === "who_ictrp" ? null : { fullName: `plugin_x_${source.key}` }),

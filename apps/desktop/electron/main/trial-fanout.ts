@@ -66,6 +66,16 @@ export type SourceOutcome = {
   timedOut?: boolean;
   challenge?: boolean;
   toolRegistered?: boolean;
+  /**
+   * Why the source's tool is absent from the catalog, when the reason is known.
+   *
+   * A failed MCP handshake and a tool that was never declared are the same
+   * observation from the catalog's side ("no such tool"), but they are opposite
+   * situations for the user. Carried separately from `explanation` so the
+   * terminaliser can pick the reason code from the *code* while the prose comes
+   * from the real message (§15.9 criteria 2 vs 3).
+   */
+  toolUnavailableReason?: { errorCode: string; message: string };
   needsSetup?: boolean;
   userDisabled?: boolean;
   overallDeadline?: boolean;
@@ -572,6 +582,7 @@ export function createFanoutBroker({
   dispatchChild,
   enabledInProject,
   probeRuntime,
+  mcpConnectFailure,
   isCancelled,
   now = () => Date.now(),
 }: {
@@ -588,6 +599,13 @@ export function createFanoutBroker({
    * the cause must be re-derived rather than read off the failure.
    */
   probeRuntime?: (source: TrialSource) => Promise<ProbeResult>;
+  /**
+   * Why a declared MCP server has no tools in the catalog, if it failed to
+   * connect. Consulted only for sources whose tool is missing, alongside
+   * `probeRuntime`: a handshake failure is not a runtime prerequisite, so the
+   * probe returns "not missing" and the cause would otherwise be dropped.
+   */
+  mcpConnectFailure?: (source: TrialSource) => { errorCode: string; message: string } | null;
   isCancelled?: () => boolean;
   now?: () => number;
 }): (input: {
@@ -626,7 +644,14 @@ export function createFanoutBroker({
               };
             }
           }
-          return { toolRegistered: false };
+          // The tool is absent, but the runtime is fine. If the server was
+          // declared and its handshake failed, say so: this is the ChiCTR case,
+          // where a 10s `initialize` timeout produced 「其查询工具在当前会话中
+          // 不可用」 — a sentence that hides the one detail worth acting on.
+          const failure = mcpConnectFailure?.(source);
+          return failure
+            ? { toolRegistered: false, toolUnavailableReason: failure }
+            : { toolRegistered: false };
         }
         if (enabledInProject && !enabledInProject(tool.pluginId ?? "")) {
           return {
@@ -766,6 +791,7 @@ export async function runTrialComposite({
   resolveTool,
   enabledInProject,
   probeRuntime,
+  mcpConnectFailure,
   dispatchChild,
   registerChildAttribution,
   releaseChildAttribution,
@@ -781,6 +807,7 @@ export async function runTrialComposite({
   resolveTool: (source: TrialSource) => ResolvedTool | null | undefined;
   enabledInProject?: (pluginId: string) => boolean;
   probeRuntime?: (source: TrialSource) => Promise<ProbeResult>;
+  mcpConnectFailure?: (source: TrialSource) => { errorCode: string; message: string } | null;
   dispatchChild: (child: ChildCall) => Promise<DispatchResult>;
   registerChildAttribution?: (child: ChildCall) => void;
   releaseChildAttribution?: (child: ChildCall) => void;
@@ -794,6 +821,7 @@ export async function runTrialComposite({
     resolveTool,
     enabledInProject,
     probeRuntime,
+    mcpConnectFailure,
     now,
     dispatchChild: async (child) => {
       try {
