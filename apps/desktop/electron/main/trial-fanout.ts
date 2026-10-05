@@ -540,6 +540,17 @@ export async function runFanout({
 }
 
 /**
+ * Monotonic broker-local invocation sequence.
+ *
+ * A turn can contain more than one composite invocation (for example after a
+ * retry). Source keys are stable within each fan-out, but are not sufficient to
+ * make child toolCallIds unique across those invocations. The sequence is used
+ * only as an attribution/audit disambiguator; the session and turn identity are
+ * still forwarded unchanged.
+ */
+let fanoutInvocationSequence = 0;
+
+/**
  * The broker the orchestrator calls: check the catalog, then dispatch through
  * the ordinary permission path.
  *
@@ -578,6 +589,7 @@ export function createFanoutBroker({
 }) => Promise<SourceConclusion[]> {
   return async function fanout({ sessionId, turnId, argsFor, onChild }) {
     const sources = dispatchOrder();
+    const invocationId = ++fanoutInvocationSequence;
     return runFanout({
       sources,
       now,
@@ -614,7 +626,7 @@ export function createFanoutBroker({
             explanation: `${source.label} 的插件未在当前项目启用。`,
           };
         }
-        const childToolCallId = `${turnId ?? sessionId}:trial:${source.key}`;
+        const childToolCallId = `${turnId ?? sessionId}:trial:${invocationId}:${source.key}`;
         const args = argsFor(source);
         // Pre-register attribution so an approval prompt can name this source
         // rather than showing a bare tool name (§4.2, ADR 0062).

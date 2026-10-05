@@ -151,7 +151,11 @@ function defaultChictrDir() {
 }
 
 function defaultCdeDir() {
-  return path.join(os.homedir(), ".xyb-chinadrugtrials", "archive");
+  // CDE MCP reads one keyword archive from
+  // ~/.xyb-chinadrugtrials/output/<keyword>/json/.  The seed must land in that
+  // exact reader path: copying it into a sibling `archive/` directory merely
+  // makes the files exist without making a single cold-start result queryable.
+  return path.join(os.homedir(), ".xyb-chinadrugtrials", "output", "胰腺癌", "json");
 }
 
 /**

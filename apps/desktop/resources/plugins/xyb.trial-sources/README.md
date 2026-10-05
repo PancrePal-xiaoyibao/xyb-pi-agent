@@ -120,6 +120,60 @@ npx -y -p chictr-mcp-server@3.0.2 chictr-setup setup --browser
 
 数据落在 `~/.xyb-chinadrugtrials/`，会话文件权限 0600，**不回显、不写日志、不进仓库**。
 
+**冷启动不需要会话**：随包归档（139 条胰腺癌试验）复制到
+`~/.xyb-chinadrugtrials/output/胰腺癌/json/`，`search_trials` 在未显式要求
+`incremental` 时**先读该本地归档**，无会话也能返回结果。只有关键词不在本地归档里、
+或显式要求刷新时才会联网，那时才需要下面的会话。
+
+#### 如何获得 Cookie（请本人操作）
+
+站点用「浏览器会话 + 反爬校验」区分真实访客与脚本。凭证必须由**你自己**在浏览器里
+正常访问后取出，工具不会代为登录、不会生成或猜测凭据，也不会绕过验证码或反爬。
+
+1. **在浏览器里正常打开平台**并搜索一次，确认能看到真实结果页：
+   `https://www.chinadrugtrials.org.cn/`
+
+2. **打开开发者工具**：Windows / Linux 按 `F12` 或 `Ctrl+Shift+I`，
+   macOS 按 `⌥⌘I`；切到 **Network（网络）** 面板，勾选 **Preserve log（保留日志）**。
+
+3. **在页面上再执行一次搜索**，在请求列表里找到那条**真正的搜索请求**
+   （类型多为 `document` 或 `xhr`，名字含 `clinicaltrials` 一类关键词）。
+
+4. **右键该请求 → Copy → Copy as cURL**
+   （macOS 中文界面是「拷贝 → 以 cURL 格式拷贝」）。
+   这一步复制出来的东西里带有 `-b` / `--cookie` 或 `-H 'Cookie: …'`，也就是会话凭证。
+
+5. **交给工具保存**：把整段 cURL 原样粘贴给助手，让它调用 `update_cookie`。
+   工具从里面提取 `Cookie` 字段写入本机会话文件（权限 0600）。
+   粘贴内容里若没有 `-b/--cookie` 或 `Set-Cookie`，工具会明确报错而不是静默保存空会话。
+
+也可以只复制 Cookie 字符串本身（形如 `FSSBBIl1UgzbN7N…=…; 其他字段=…`）粘贴保存。
+
+6. **验证是否可用**：让助手调一次 `search_trials` 或 `get_collector_status`。
+   会话有效时会正常返回结果；失效时报 `CHALLENGE_REQUIRED`，或返回
+   「会话已失效或不是站内请求的完整 Cookie」的提示——**这不等于「没有相关试验」**。
+
+7. **会话过期后重新做一遍第 1～5 步**。反爬 Cookie 会自然过期，这是站点行为。
+   平台自己下发的反爬字段可以用 `refresh_bootstrap_cookie` 刷新并合并进本机会话文件，
+   但它**只更新站点签发的字段**，不生成、不猜测任何凭据，也救不回已彻底失效的登录态。
+   失效后仍需本人重新「复制为 cURL」。
+
+命令行路径（不想走助手时）：
+
+```bash
+# 环境准备
+bash scripts/xyb-setup-chinadrugtrials.sh
+```
+
+```python
+# 保存会话（curl_text 换成你复制到的整段 cURL）
+import sys; sys.path.insert(0, "collectors/chinadrugtrials")
+from cookie_tools import save_cookie_to_config
+save_cookie_to_config("<你的 config.json 路径>", curl_text, merge=True)
+```
+
+**红线**：不得替患者生成、猜测或复用他人 Cookie；不得尝试绕过验证码或反爬机制。
+
 **CSV/命令行路径**：不想用助手时，可以跑
 `bash scripts/xyb-setup-chinadrugtrials.sh` 准备环境，再按技能文档直接调采集器。
 

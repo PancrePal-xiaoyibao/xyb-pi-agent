@@ -838,6 +838,52 @@ function parseKeywords(input) {
 
 const MAX_KEYWORDS = 8;
 
+/**
+ * Return a local archive before trying the network.
+ *
+ * `search_trials` is the fan-out entry point, so a bundled archive that is only
+ * visible to `list_archived` is not a cold-start fallback at all.  Local rows
+ * are already the result of an earlier scrape; reading them neither needs a
+ * browser cookie nor may trigger a new crawl.  `sync_incremental` remains the
+ * explicit refresh path for a user who wants newer data.
+ */
+async function readLocalSearch(keyword, maxPages) {
+  const keywordDir = safeKeywordDir(keyword);
+  if (!fs.existsSync(keywordDir)) return null;
+  const limit = Math.max(1, Math.trunc(Number(maxPages) || 2)) * 10;
+  const { total, trials } = await readTrialsFromDir(keywordDir, limit);
+  if (total === 0) return null;
+  return {
+    ok: true,
+    keywords: keyword,
+    total_records: total,
+    archived_records: total,
+    trials,
+    archive_dir: keywordDir,
+    local_archive: true,
+    truncated: trials.length < total,
+    ...(trials.length < total
+      ? {
+          truncation_note:
+            `本地归档共 ${total} 条，本次按 max_pages 返回 ${trials.length} 条；` +
+            `还有 ${total - trials.length} 条未显示。不要据此判断没有相关试验。`,
+        }
+      : {}),
+    notice: `已从本机归档返回 ${trials.length}/${total} 条；未联网抓取。`,
+    disclaimer: DISCLAIMER,
+  };
+}
+
+async function searchOneKeyword({ keyword, args, incremental, maxPages }) {
+  // An explicit incremental sync means the caller deliberately asked to refresh;
+  // otherwise local data is authoritative for this query attempt.
+  if (!incremental) {
+    const local = await readLocalSearch(keyword, maxPages);
+    if (local) return local;
+  }
+  return runScrape({ keywords: keyword, args, incremental, maxPages });
+}
+
 async function toolSearchTrials(args) {
   const keywords = parseKeywords(args?.keywords);
   if (!keywords.length) keywords.push("胰腺癌");
@@ -852,25 +898,27 @@ async function toolSearchTrials(args) {
   const incremental = Boolean(args?.incremental);
   const maxPages = args?.max_pages ?? 2;
 
-  // 单关键词：保持原有返回形状，调用方不必区分。
+  // Single-keyword output must expose `trials` at top level: it is the shape
+  // the host fan-out extracts into records.
   if (keywords.length === 1) {
-    return runScrape({ keywords: keywords[0], args, incremental, maxPages });
+    return searchOneKeyword({ keyword: keywords[0], args, incremental, maxPages });
   }
 
   const results = [];
   for (const keyword of keywords) {
-    // 逐词串行：站点有频率限制，并发会更容易被判成挑战页。
-    const result = await runScrape({ keywords: keyword, args, incremental, maxPages });
+    // Process one key at a time: remote calls are rate limited, while local
+    // archive reads remain cheap and deterministic.
+    const result = await searchOneKeyword({ keyword, args, incremental, maxPages });
     results.push({
       keywords: keyword,
       ok: Boolean(result.ok),
       total_records: result.total_records ?? 0,
       archived_records: result.archived_records ?? 0,
       archive_dir: result.archive_dir ?? "",
+      local_archive: Boolean(result.local_archive),
       error: result.ok ? undefined : result.error,
       hint: result.ok ? undefined : result.hint,
     });
-    // 某个词失败不中断其余词。
   }
 
   const succeeded = results.filter((r) => r.ok);
@@ -886,7 +934,7 @@ async function toolSearchTrials(args) {
     results,
     notice:
       failed.length === 0
-        ? `已逐个关键词归档到各关键词目录下（共 ${succeeded.length} 个）。`
+        ? `已逐个关键词返回本地归档或完成同步（共 ${succeeded.length} 个）。`
         : `${succeeded.length} 个关键词成功、${failed.length} 个失败。失败的关键词本次没有归档，这${"不等于"}其中没有相关试验——请按各条 hint 处理后重试。`,
     disclaimer: DISCLAIMER,
   };
@@ -1320,6 +1368,8 @@ export const _internals = {
   parseInstitutions,
   summarizeDetail,
   parseKeywords,
+  readLocalSearch,
+  searchOneKeyword,
   INSTITUTION_HEADER,
 };
 

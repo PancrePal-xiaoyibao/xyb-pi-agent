@@ -527,6 +527,29 @@ test("each child dispatches under its own toolCallId and the composite's session
   assert.deepEqual(calls.find((c) => c.toolName.includes("chictr")).args, { keyword: "chictr" });
 });
 
+test("repeated fan-outs in the same session and turn use distinct child toolCallIds", async () => {
+  const calls = [];
+  const fanout = createFanoutBroker({
+    resolveTool: (source) => ({ fullName: `plugin_x_${source.key}` }),
+    dispatchChild: async (params) => {
+      calls.push(params);
+      return okResult({ records: [] });
+    },
+  });
+
+  await Promise.all([
+    fanout({ sessionId: "same-session", turnId: "same-turn", argsFor: () => ({}) }),
+    fanout({ sessionId: "same-session", turnId: "same-turn", argsFor: () => ({}) }),
+  ]);
+
+  assert.equal(calls.length, 10);
+  assert.equal(
+    new Set(calls.map((call) => call.toolCallId)).size,
+    10,
+    "same-turn retries must not overwrite each other's host attribution",
+  );
+});
+
 test("attribution is pre-registered before the child is dispatched", async () => {
   // An approval prompt must be able to name the source, so registration has to
   // happen before dispatch, not after the result comes back.

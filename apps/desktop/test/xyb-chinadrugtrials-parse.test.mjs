@@ -351,6 +351,35 @@ test("MCP 经软链接路径启动时仍能建立传输层", async () => {
 //     与「归档确实为空」混为一谈，同样会被误读成「这个关键词没有试验」。
 // ─────────────────────────────────────────────────────────────────────────────
 
+test("search_trials 优先返回隔离目录的胰腺癌冷启动归档，无 Cookie 也不得联网", async () => {
+  const fresh = await fsp.mkdtemp(path.join(os.tmpdir(), "cdt-cold-start-"));
+  const jsonDir = path.join(fresh, "output", "胰腺癌", "json");
+  const bundledSeedDir = path.resolve(pluginDir, "..", "data", "chinadrugtrials");
+  await fsp.mkdir(jsonDir, { recursive: true });
+  const seeds = (await fsp.readdir(bundledSeedDir))
+    .filter((name) => /^CTR.*\.json$/i.test(name))
+    .slice(0, 3);
+  assert.equal(seeds.length, 3, "随包种子至少应有三条可供端到端验证");
+  await Promise.all(seeds.map((name) => fsp.copyFile(path.join(bundledSeedDir, name), path.join(jsonDir, name))));
+
+  try {
+    const result = await callTool({
+      dataDir: fresh,
+      name: "search_trials",
+      args: { keywords: "胰腺癌", max_pages: 1 },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.local_archive, true, "冷启动命中本地归档时不得进入联网采集器");
+    assert.equal(result.total_records, 3);
+    assert.equal(result.archived_records, 3);
+    assert.equal(result.trials.length, 3);
+    assert.ok(result.trials.every((trial) => trial.reg_no && trial.title && trial.state));
+    assert.match(result.notice, /未联网抓取/);
+  } finally {
+    await fsp.rm(fresh, { recursive: true, force: true });
+  }
+});
+
 test("list_archived 截断时必须给出 truncated 与 suggested_limit", async () => {
   const fresh = await fsp.mkdtemp(path.join(os.tmpdir(), "cdt-trunc-"));
   const jsonDir = path.join(fresh, "output", "测试关键词", "json");

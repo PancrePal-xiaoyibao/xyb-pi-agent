@@ -85,7 +85,7 @@
       "key": "cdeSeedDir",
       "type": "string",
       "title": "CDE 冷启动归档目录",
-      "description": "中国药物临床试验登记平台结构化归档的复制目标目录。留空（推荐）使用 ~/.xyb-chinadrugtrials/archive。归档只含胰腺癌相关试验；目录已存在时不覆盖你自己的抓取结果。",
+      "description": "中国药物临床试验登记平台胰腺癌冷启动归档 JSON 的复制目标目录。留空（推荐）使用 ~/.xyb-chinadrugtrials/output/胰腺癌/json，这是 MCP 读取本地归档的实际位置。归档只含胰腺癌相关试验；目录已存在时不覆盖你自己的抓取结果。",
       "default": ""
     },
     {
