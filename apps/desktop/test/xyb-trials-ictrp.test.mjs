@@ -1,7 +1,7 @@
 /**
  * F2 扩展：第 5 来源（WHO ICTRP）的契约回归测试。
  *
- * 对应 SPEC `docs/spec/xyb-unified-trial-host-orchestration.md` §15.9 第 4、5、6、7、9 条。
+ * 对应 SPEC `docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` §15.9 第 4、5、6、7、9 条。
  * 只测纯函数层（lib/unified.js）：离线、无网络、无 MCP、不启动 Python。
  *
  * 为什么单独成文件而不并入 xyb-trials-unified.test.mjs：那个文件测的是四来源

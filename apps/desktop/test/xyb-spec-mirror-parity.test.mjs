@@ -1,4 +1,4 @@
-// Guards the gate that guards the bilingual SPEC.
+// Guards the gate that guards the SPEC's structural integrity.
 //
 // `scripts/check-spec-mirror-parity.mjs` is only useful if it actually fails on
 // the drift it claims to catch — and its checks are non-obvious enough (a window
@@ -19,17 +19,32 @@ import {
 const root = new URL("../../../", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, root), "utf8");
 
-const AUTHORITY = "docs/spec/xyb-unified-trial-host-orchestration.md";
-const MIRROR = "docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md";
+// The SPEC is a Chinese-language original and the sole authority for its topic,
+// so it is checked on its own rather than against a counterpart.
+const AUTHORITY = "docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md";
 
-test("the shipped SPEC pair passes parity", () => {
-  // The one assertion that matters for the real documents. If this fails, the
-  // two files have drifted and one of them is now lying about the other.
+test("the shipped SPEC passes structural parity with no mirror", () => {
+  // The one assertion that matters for the real document. Its 72 internal
+  // cross-references must all resolve, its 82 section numbers must be unique,
+  // and its code fences must balance.
+  const failures = checkParity({ spec: { source: read(AUTHORITY) }, mirror: null });
+  assert.deepEqual(failures, [], `SPEC 自身结构漂移：\n  ${failures.join("\n  ")}`);
+});
+
+test("single-authority mode tolerates a mirror being absent entirely", () => {
+  // Paired mode is still available for a future bilingual SPEC; the gate must
+  // not require one, or a Chinese-only page could never be checked at all.
   const failures = checkParity({
-    spec: { source: read(AUTHORITY) },
-    mirror: { source: read(MIRROR) },
+    spec: { source: "### 1.1 A\n\n见 §1.1。\n" },
+    mirror: null,
   });
-  assert.deepEqual(failures, [], `SPEC 与中文镜像结构漂移：\n  ${failures.join("\n  ")}`);
+  assert.deepEqual(failures, []);
+});
+
+test("single-authority mode has no English counterpart on disk", () => {
+  // Pins the migration: the file was moved out of `docs/spec/` precisely because
+  // two documentation gates read that directory as the English source of truth.
+  assert.throws(() => read("docs/spec/xyb-unified-trial-host-orchestration.md"));
 });
 
 test("chinese ordinals parse across the ranges the SPEC uses", () => {

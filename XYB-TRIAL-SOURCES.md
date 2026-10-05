@@ -8,7 +8,7 @@
 > 形态与既有三处**不同**：源码随包 vendoring（`mcp/ictrp/`），由 `python3 -m ictrp_mcp.server` 启动，依赖
 > `mcp` / `httpx` / `pydantic`，**不经过 npm 或 PyPI**。它是本插件唯一的非 Node 依赖，也是第一个需要四级运行时
 > 探测的来源（可执行文件 → 随包模块 → 第三方依赖 → MCP 握手）。完整规格见
-> `docs/spec/xyb-unified-trial-host-orchestration.md` §15；本节只记录它与既有来源的形态差异。
+> `docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` §15；本节只记录它与既有来源的形态差异。
 > **尚未实现。**
 
 ---
@@ -260,7 +260,7 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
    是首次检索时静默拉取，还是提示患者确认？
 4. **CDE 是否接入**：~~公开检索能力有限，当前只在技能文档里作为方向提及。~~
    **已定（2026-10-04）：CDE 作为统一查询来源接入，且与其他来源同等纳入扇出**（用户否决了原同意闸门设计）。
-   见 `docs/spec/xyb-unified-trial-host-orchestration.md` §4.3。CDE 随包种子仍未构建（§7.1 是新增能力）。
+   见 `docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` §4.3。CDE 随包种子仍未构建（§7.1 是新增能力）。
 5. **跨社区**：小铃铛（淋巴瘤）、小肺宝（肺癌）是否同 App 承载，仍待定
    （见 `XYB-ASSISTANTS.md`）。
 6. **`chinadrugtrials-collector` 补 LICENSE**：无 LICENSE 即默认保留所有权利，

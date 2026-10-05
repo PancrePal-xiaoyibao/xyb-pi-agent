@@ -98,7 +98,7 @@ ICTRP **没有**「匹配总数」这个单一数字。它给出两个独立的�
 
 > WHO 条款约束的是**数据本身**："These Terms and Conditions apply to all data obtained from the WHO ICTRP,
 > independent of format and method of acquisition." 义务在**持有数据期间一直有效**，卸载也不终止。
-> 逐条要求见 `docs/spec/xyb-unified-trial-host-orchestration.md` §15.7。**营销与商业用途被禁止**。
+> 逐条要求见 `docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md` §15.7。**营销与商业用途被禁止**。
 
 ---
 

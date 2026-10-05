@@ -8,7 +8,7 @@
 行为若有变更，必须同步更新本文版本号与「变更记录」。
 
 > **⚠️ 五渠道状态说明（2026-10-04）：** WHO ICTRP 已由用户确定为**第 5 个来源**，其集成规格见
-> [`docs/spec/xyb-unified-trial-host-orchestration.md`](docs/spec/xyb-unified-trial-host-orchestration.md) §15。
+> [`docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md`](docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md) §15。
 > 该接入**尚未实现**，本文因此仍描述当前已实现的四渠道契约。编排层的部分（协调层位置、完整性责任、
 > 来源描述符）已由该 SPEC §4 / §6 取代；**合并规则与去重语义仍然有效**。待第 5 来源实现后，
 > 本文须升版并改为五渠道表述。

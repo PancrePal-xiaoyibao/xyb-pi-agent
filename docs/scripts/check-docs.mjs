@@ -19,7 +19,9 @@
  *     must resolve to a record. Retired ids stay citable by design.
  *  5. Chinese pages: every page under `docs/zh-CN` must mirror an English page,
  *     so a translation never outlives the page it translates. `index.md` and
- *     `README.md` are the same page in both trees.
+ *     `README.md` are the same page in both trees. Pages in
+ *     `CHINESE_ONLY_PAGES` are exempt because they are Chinese-language
+ *     originals with no English counterpart to outlive.
  *
  * Dead links are deliberately not re-implemented here: the VitePress build
  * fails on them for every page, and `docs-check.yml` runs that build right
@@ -36,6 +38,20 @@ const PLACEHOLDER = 'PIHOLDTOKEN'
 const REQUIRED_ADR_SECTIONS = ['Context', 'Decision']
 const OPTIONAL_ADR_SECTIONS = ['Consequences']
 const INDEX_FILE = 'README.md'
+
+/**
+ * Pages that exist in Chinese only, because they were authored in Chinese and
+ * have no English original. Rule 5 normally holds that a Chinese page must
+ * mirror an English one so a translation cannot outlive its source; these pages
+ * have no source to outlive, so the rule does not apply to them.
+ *
+ * Listing a page here is a claim that it is a Chinese-language original. It is
+ * deliberately explicit rather than pattern-based: an entry should be added
+ * only with the same care as the page itself, not to silence a failure.
+ */
+const CHINESE_ONLY_PAGES = new Set([
+  'zh-CN/spec/xyb-unified-trial-host-orchestration.md',
+])
 
 /**
  * Decision ids that were deliberately retired, so citing one is legitimate even
@@ -332,6 +348,7 @@ export function verifyChineseMirrors(relativePaths) {
 
   for (const relativePath of relativePaths) {
     if (!relativePath.startsWith('zh-CN/')) continue
+    if (CHINESE_ONLY_PAGES.has(relativePath)) continue
     const counterpart = pageKey(relativePath.slice('zh-CN/'.length))
     if (!english.has(counterpart)) {
       failures.push(`${relativePath}: no English page at docs/${counterpart}`)

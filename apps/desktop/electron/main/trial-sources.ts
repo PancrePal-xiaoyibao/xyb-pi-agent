@@ -1,7 +1,7 @@
 /**
  * Trial-source registry — the closed list of sources the host is willing to fan out to.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §6.2, §15.3.3
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §6.2, §15.3.3
  *
  * Why this table lives in the host and not in a plugin: a plugin declaring
  * "I am a qualified trial source" would be self-authorising entry into the

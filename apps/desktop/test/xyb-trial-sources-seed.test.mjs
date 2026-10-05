@@ -9,6 +9,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,6 +44,18 @@ function readTitles(dbPath) {
     .trim()
     .split("\n")
     .filter(Boolean);
+}
+
+/**
+ * Hash a file in Node rather than shelling out.
+ *
+ * `md5` is a macOS binary; Linux ships `md5sum`, and GNU `md5sum` has no `-q`
+ * flag. The first CI run of this file died with `spawnSync md5 ENOENT` — the
+ * assertion was about byte equality, but it was really testing the host's
+ * toolchain. Node hashes the same bytes everywhere.
+ */
+function digest(file) {
+  return createHash("md5").update(readFileSync(file)).digest("hex");
 }
 
 describe("xyb.trial-sources 种子复制", () => {
@@ -112,10 +125,7 @@ describe("xyb.trial-sources 种子复制", () => {
     const target = join(dir, "ctv.db");
     // 50MB 的库经 copyFile 后必须逐字节相同 —— writeText 做不到这件事。
     assert.equal(statSync(target).size, statSync(seed).size);
-    assert.equal(
-      execFileSync("md5", ["-q", target], { encoding: "utf8" }),
-      execFileSync("md5", ["-q", seed], { encoding: "utf8" }),
-    );
+    assert.equal(digest(target), digest(seed));
     assert.equal(existsSync(`${target}.seed-tmp`), false, "临时文件必须已被改名");
 
     // 复制出来的必须是能读的库，不是半个文件。

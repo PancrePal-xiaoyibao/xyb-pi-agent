@@ -1,7 +1,7 @@
 /**
  * Trial-query fan-out broker: dispatch, deadline, and denial-mapping tests.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §4.4
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §4.1, §4.2, §4.4
  *
  * The failure these exist to prevent: host-core reports a permission denial and
  * a capacity rejection as a *normal* result (`ok:false` plus an `errorCode`),

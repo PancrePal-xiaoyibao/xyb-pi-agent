@@ -1,7 +1,7 @@
 /**
  * The trial panel's state vocabulary must cover every state the two backends emit.
  *
- * SPEC: docs/spec/xyb-unified-trial-host-orchestration.md §3.3, §15.13
+ * SPEC: docs/zh-CN/spec/xyb-unified-trial-host-orchestration.md §3.3, §15.13
  *
  * Two layers produce source states: the plugin's own `lib/unified.js` (used by
  * the assistant-facing `xyb_trials_unify` tool) and the host orchestrator's
