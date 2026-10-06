@@ -51,7 +51,7 @@ jobs:
       - name: 插件契约测试
         run: node scripts/xyb-check-plugin-contract.mjs
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
