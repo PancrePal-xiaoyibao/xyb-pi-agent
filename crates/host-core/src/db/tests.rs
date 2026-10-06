@@ -1341,13 +1341,30 @@ fn old_path_projects_are_legacy_single_root_groups() {
 fn ensure_project_upserts_by_path() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let a = db.ensure_project("/tmp/demo", true).unwrap();
-    let b = db.ensure_project("/tmp/demo/", false).unwrap();
+
+    // Build the expectation from the same platform the code runs on instead of
+    // hardcoding "/tmp/demo": `ensure_project` canonicalizes an existing path, so
+    // on macOS `/tmp/demo` is stored as `/private/tmp/demo` (`/tmp` is a symlink
+    // to `private/tmp`) while on Linux it stays `/tmp/demo`. Both spellings with
+    // and without the trailing slash must still collapse onto one row.
+    let project_dir = dir.path().join("demo");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let raw = project_dir.to_string_lossy().to_string();
+    let expected = std::fs::canonicalize(&project_dir)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    let a = db.ensure_project(&raw, true).unwrap();
+    let b = db.ensure_project(&format!("{raw}/"), false).unwrap();
     assert_eq!(a, b);
-    assert_eq!(db.project_path(a).unwrap().as_deref(), Some("/tmp/demo"));
+    assert_eq!(
+        db.project_path(a).unwrap().as_deref(),
+        Some(expected.as_str())
+    );
     let projects = db.list_projects().unwrap();
     assert_eq!(projects.len(), 1);
-    assert_eq!(projects[0].path, "/tmp/demo");
+    assert_eq!(projects[0].path, expected);
     assert_eq!(projects[0].name, "demo");
 
     let windows = db.ensure_project("C:\\work\\project\\", false).unwrap();
