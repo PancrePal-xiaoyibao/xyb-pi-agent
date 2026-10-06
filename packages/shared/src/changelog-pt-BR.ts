@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.17.2",
+    "date": "2026-10-06",
+    "highlights": [
+      "As fontes de ensaios agora incluem cinco pacotes de dados offline que você pode instalar ou atualizar dentro do próprio aplicativo, então um instantâneo mais recente não exige mais reinstalá-lo.",
+      "Esses pacotes são baixados do GitHub Releases; na China continental o download costuma expirar sem uma VPN ou proxy, e o painel avisa isso antes de você clicar.",
+      "Tudo que sobrescreveria dados coletados por você é listado e confirmado primeiro; os cinco locais mostram exatamente quais arquivos estão em jogo.",
+      "Um pacote que não baixa, cuja soma de verificação falha ou que não pode ser descompactado deixa os seus dados existentes como estavam.",
+      "O arquivo CDE agora é montado onde a consulta realmente lê. Antes, uma instalação podia informar sucesso enquanto todas as buscas retornavam vazio em silêncio.",
+      "Um teste que afirmava um literal de caminho do macOS nunca poderia passar no próprio macOS e mantinha a suíte Rust local vermelha; agora ele deriva a expectativa da plataforma em execução.",
+    ],
+  },
+  {
     "version": "0.17.1",
     "date": "2026-10-06",
     "highlights": [

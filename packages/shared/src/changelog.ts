@@ -30,6 +30,18 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.17.2",
+    date: "2026-10-06",
+    highlights: [
+      "Trial sources now ship five offline data packs you can install or update from inside the app, so a fresher snapshot no longer requires reinstalling it.",
+      "These packs are fetched from GitHub Releases; on a mainland China connection the download will usually time out unless a VPN or proxy is on, and the panel says so before you click.",
+      "Anything that would overwrite data you scraped yourself is listed and confirmed first, and the five pack locations show exactly which files are at stake.",
+      "A pack that fails to download, fails its checksum, or cannot be unpacked leaves your existing data exactly as it was.",
+      "The CDE archive is now mounted where the query actually reads it. Before this, an install could report success while every search quietly returned nothing.",
+      "A test that asserted a macOS path literal could never pass on macOS itself, and left the local Rust suite red; it now derives its expectation from the running platform.",
+    ],
+  },
+  {
     version: "0.17.1",
       date: "2026-10-06",
       highlights: [
@@ -907,6 +919,18 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.17.2",
+    date: "2026-10-06",
+    highlights: [
+      "试验来源现在随包提供五个离线数据包，可以在应用内直接安装或更新，拿到更新的快照不再需要重装应用。",
+      "这些数据包从 GitHub Releases 下载；中国大陆直连大概率超时，需要先开 VPN 或代理，面板在你点击之前就会说明。",
+      "会覆盖你自己抓取的数据的那几项，会先列出并征求同意；五个数据包的落点会显示具体涉及哪些文件。",
+      "下载失败、校验不通过、或解压不成功的数据包，原有数据保持原样，不会出现替换到一半的状态。",
+      "CDE 归档现在会挂载到查询真正读取的位置。此前安装可能报告成功，而每次查询都静默返回空结果。",
+      "有一条测试断言了 macOS 的路径字面量，在 macOS 上永远不可能通过，导致本机 Rust 测试长期是红的；它现在改为按运行平台推导期望值。",
+    ],
+  },
+  {
     version: "0.17.1",
       date: "2026-10-06",
       highlights: [
@@ -1783,6 +1807,18 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.17.2",
+    date: "2026-10-06",
+    highlights: [
+      "試驗來源現在隨包提供五個離線資料包，可以在應用程式內直接安裝或更新，拿到更新的快照不再需要重新安裝。",
+      "這些資料包從 GitHub Releases 下載；中國大陸直連大概率逾時，需要先開 VPN 或代理，面板在你點擊之前就會說明。",
+      "會覆蓋你自己抓取資料的那幾項，會先列出並徵求同意；五個資料包的落點會顯示具體涉及哪些檔案。",
+      "下載失敗、校驗不通過、或解壓不成功的資料包，原有資料保持原樣，不會出現替換到一半的狀態。",
+      "CDE 封存檔現在會掛載到查詢真正讀取的位置。此前安裝可能回報成功，而每次查詢都靜默傳回空結果。",
+      "有一條測試斷言了 macOS 的路徑字面量，在 macOS 上永遠不可能通過，導致本機 Rust 測試長期是紅的；它現在改為依執行平台推導期望值。",
+    ],
+  },
   {
     version: "0.17.1",
       date: "2026-10-06",
