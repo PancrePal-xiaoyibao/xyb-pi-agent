@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.1",
+    "date": "2026-10-06",
+    "highlights": [
+      "Las fuentes de ensayos ahora incluyen cinco paquetes de datos sin conexión que se pueden instalar o actualizar en el sitio, así que una nueva instantánea ya no exige reinstalar la aplicación.",
+      "Antes de sobrescribir nada se le pregunta: varias de esas ubicaciones son también donde acaban sus propios datos extraídos, y la aplicación enumera primero los archivos exactos.",
+      "Un paquete que no se descarga, cuya suma de comprobación falla o que no se descomprime deja intactos sus datos existentes en lugar de reemplazarlos a medias.",
+      "El archivo CDE se monta donde la consulta realmente lee. Antes, una instalación podía informar de éxito mientras todas las búsquedas volvían vacías.",
+      "El panel ahora muestra tanto dónde se instala un paquete como de dónde se lee, porque en dos de ellos esas rutas son distintas.",
+      "Una fuente cuyo servicio no pudo conectarse lo dice, en lugar de ofrecer en silencio un resultado vacío.",
+    ],
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-05",
     "highlights": [

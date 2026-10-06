@@ -261,14 +261,45 @@ plainly rather than pretending the work was done.
 | Dependency | Affects | How to get it |
 |---|---|---|
 | None | My Records / Find Trials / Track Progress / Assistants / External skills | Works out of the box |
-| Enabling `xyb.trial-sources` | The three China sources | Enable it in the plugin page (this grants the local-process permission) |
+| Enabling `xyb.trial-sources` | The China sources + WHO ICTRP | Enable it in the plugin page (this grants the local-process permission) |
+| **Network** | Downloading or updating any of the five offline data packs | The packs live on GitHub Releases. **On a mainland-China connection `github.com` will very likely time out — turn on a VPN or proxy first.** The same applies if a corporate network blocks it |
 | Network + Playwright Chromium (~570 MB) | ChiCTR search | Fetched on first use |
-| Local `ctv-mcp-server` + a built index | Veeva CTV search | Install it yourself and build the index, otherwise you get `INDEX_EMPTY` (which is not the same as "no matching studies") |
+| Local `ctv-mcp-server` + a built index | Veeva CTV search | The bundled pack covers this out of the box; refresh it yourself only if you want newer studies. Without an index you get `INDEX_EMPTY` (which is not the same as "no matching studies") |
 | Python 3 | China Drug Trials Registry | The agent can install the dependencies; **Python itself is on you** |
 | Your own browser session | Same as above | Copy the in-site search request as cURL and hand it to the agent; you will need to refresh it when it expires |
 
 > Scraping runs **record by record** (about 1.5 s apart). With many records it takes minutes —
 > this is not a cache lookup.
+
+### 5.1 Offline data packs: install and update
+
+Open the plugin page → **Trial Sources**. Under *Offline data packs* each of the five packs has an
+**Install** (or **Update**) button. Installing a pack copies it into your home directory once and
+then works with no network at all.
+
+| Pack | What it is | Installed to | Size |
+|---|---|---|---|
+| ChiCTR pancreatic snapshot | 468 ChiCTR records for pancreatic cancer | `~/.xyb-chictr/pancreatic_trials.json` | ~0.7 MB |
+| CDE pancreatic JSON | 139 CDE records, structured JSON only | `~/.xyb-chinadrugtrials/output/胰腺癌/json/` | ~1.0 MB |
+| CDE full archive | The above plus raw pages and DOC exports | `~/.xyb-chinadrugtrials/corpora/` | ~10.5 MB |
+| WHO ICTRP snapshot | 6262 pancreatic-cancer hits from the WHO ICTRP export | `~/.xyb-ictrp/pancreatic-cancer.json` | ~1.4 MB |
+| Veeva CTV index | Local SQLite copy of the Veeva CTV index | `~/.ctv-mcp/ctv.db` | ~11 MB |
+
+**Before anything is overwritten, you are asked.** Some of these locations are also where *your
+own* scraping results land — ChiCTR, CDE and Veeva all write to the paths above. So the app first
+checks whether files are already there, tells you which ones, and only overwrites after you click
+**Agree and overwrite**. Decline and nothing on disk changes.
+
+**Failures never damage your data.** If the download is truncated, the asset has been replaced, or
+the archive will not unpack, the install aborts and whatever you had stays exactly as it was.
+
+**GitHub needs a VPN here.** The packs are hosted on GitHub Releases. A direct connection from
+mainland China will very likely time out; turn on a VPN or proxy first. The app says this up front,
+before you click, not after the download fails.
+
+> A pack only covers **pancreatic cancer**. A local zero-hit result means "not in this snapshot",
+> never "this trial does not exist". WHO ICTRP indexes English metadata only, so a Chinese keyword
+> will always return zero hits — search in English (e.g. `pancreatic cancer`) instead.
 
 ### Appendix: how these capabilities are layered
 

@@ -68,3 +68,6 @@ worktrees
 # Python 字节码缓存（scripts/ 下的本 fork 工具会在运行时生成）
 __pycache__/
 *.pyc
+
+# 语料打包产物（用 scripts/xyb-pack-corpus.mjs 生成，上传到 GitHub Releases，不入库）
+dist-release/

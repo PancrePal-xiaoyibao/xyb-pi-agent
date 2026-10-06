@@ -2,14 +2,17 @@
   "schemaVersion": 1,
   "id": "xyb.trial-sources",
   "name": "中国与区域试验来源",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "可选数据源扩展：中国临床试验注册中心（ChiCTR）、Veeva CTV 与中国药物临床试验登记与信息公示平台。默认关闭，需用户显式启用；启用后助手可检索中国注册试验。",
   "main": "main.js",
   "contributes": {
     "views": [
       {
         "id": "sources",
-        "title": { "en": "Trial Sources", "zh-CN": "试验来源" },
+        "title": {
+          "en": "Trial Sources",
+          "zh-CN": "试验来源"
+        },
         "icon": "server",
         "entry": "views/sources.html",
         "order": 21
@@ -19,7 +22,16 @@
       {
         "id": "xyb.trial-sources.list",
         "title": "小胰宝：看看有哪些试验来源",
-        "keywords": ["数据源", "来源", "中国", "ChiCTR", "Veeva", "CTV", "登记平台", "药物临床试验登记"]
+        "keywords": [
+          "数据源",
+          "来源",
+          "中国",
+          "ChiCTR",
+          "Veeva",
+          "CTV",
+          "登记平台",
+          "药物临床试验登记"
+        ]
       }
     ],
     "skills": [
@@ -33,7 +45,10 @@
         "label": "ChiCTR 中国临床试验注册中心",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "chictr-mcp-server@3.0.2"],
+        "args": [
+          "-y",
+          "chictr-mcp-server@3.0.2"
+        ],
         "env": {
           "CHICTR_USE_SIDECAR": "1"
         }
@@ -43,7 +58,10 @@
         "label": "Veeva CTV（本地索引）",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "ctv-mcp-server@0.1.0"]
+        "args": [
+          "-y",
+          "ctv-mcp-server@0.1.0"
+        ]
       },
       {
         "id": "chinadrugtrials",
@@ -56,7 +74,10 @@
         "label": "WHO ICTRP（全球多注册库汇总）",
         "transport": "stdio",
         "command": "python3",
-        "args": ["-m", "ictrp_mcp.server"],
+        "args": [
+          "-m",
+          "ictrp_mcp.server"
+        ],
         "env": {
           "PYTHONPATH": "./mcp/ictrp",
           "ICTRP_BUNDLE_PATH": "./data/ictrp/pancreatic-cancer.json"
@@ -65,7 +86,11 @@
       }
     ]
   },
-  "permissions": ["ui.view", "agent.prompt.inject", "mcp.server.local"],
+  "permissions": [
+    "ui.view",
+    "agent.prompt.inject",
+    "mcp.server.local"
+  ],
   "settings": [
     {
       "key": "veevaDataDir",
@@ -94,10 +119,27 @@
       "title": "WHO ICTRP 快照目录",
       "description": "留空（推荐）使用随包分发的快照（6262 条，关键词 pancreatic cancer）。只有你想换成自己构建的快照（例如换关键词、或更新过期的快照）时才需要填：填一个目录，运行时按 pancreatic-cancer.json 在里面查找。",
       "default": ""
+    },
+    {
+      "key": "cdeDataDir",
+      "type": "string",
+      "title": "CDE 数据根目录",
+      "description": "中国药物临床试验登记平台抓取数据的根目录。留空（推荐）使用 ~/.xyb-chinadrugtrials。MCP 在其中按 output/<关键词>/json/ 读取归档，你的 Cookie 凭据（config.json）与抓取环境（venv/）也都住在这里，所以一般不要改。",
+      "default": ""
+    },
+    {
+      "key": "cdeCorpusDir",
+      "type": "string",
+      "title": "CDE 离线语料安装目录",
+      "description": "冷启动下载的 CDE 胰腺癌社区归档（含 json/ raw/ word/，约 11 MB）解压到哪里。留空（推荐）使用 ~/.xyb-chinadrugtrials/corpora。安装后会以符号链接挂到 MCP 的读取路径下，不会覆盖你自己抓的结果。",
+      "default": ""
     }
   ],
   "engines": {
     "piDesktop": ">=0.1.0"
   },
-  "activationEvents": ["onStartup", "onCommand:xyb.trial-sources.list"]
+  "activationEvents": [
+    "onStartup",
+    "onCommand:xyb.trial-sources.list"
+  ]
 }

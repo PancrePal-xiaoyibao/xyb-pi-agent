@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.1",
+    "date": "2026-10-06",
+    "highlights": [
+      "Les sources d'essais incluent désormais cinq paquets de données hors ligne installables ou actualisables sur place : un nouvel instantané n'exige plus de réinstaller l'application.",
+      "Avant tout écrasement, la question vous est posée : plusieurs de ces emplacements sont aussi ceux où arrivent vos propres données extraites, et l'application liste d'abord les fichiers exacts.",
+      "Un paquet qui ne se télécharge pas, dont l'empreinte ne correspond pas ou qui ne s'extrait pas laisse vos données existantes intactes au lieu de les remplacer à moitié.",
+      "L'archive CDE est montée là où la requête lit réellement. Auparavant, une installation pouvait annoncer un succès alors que chaque recherche revenait vide.",
+      "Le panneau indique désormais à la fois où un paquet est installé et d'où il est lu, car pour deux d'entre eux ces chemins diffèrent.",
+      "Une source dont le service n'a pas pu se connecter le signale, au lieu de proposer silencieusement un résultat vide.",
+    ],
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-05",
     "highlights": [
