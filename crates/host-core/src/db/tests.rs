@@ -1358,7 +1358,10 @@ fn ensure_project_upserts_by_path() {
     let a = db.ensure_project(&raw, true).unwrap();
     let b = db.ensure_project(&format!("{raw}/"), false).unwrap();
     assert_eq!(a, b);
-    assert_eq!(db.project_path(a).unwrap().as_deref(), Some(expected.as_str()));
+    assert_eq!(
+        db.project_path(a).unwrap().as_deref(),
+        Some(expected.as_str())
+    );
     let projects = db.list_projects().unwrap();
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].path, expected);
