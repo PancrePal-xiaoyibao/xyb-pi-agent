@@ -22,7 +22,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -167,6 +177,11 @@ before(async () => {
     ["pancreatic-cancer.json", JSON.stringify({ snapshot: { created_at: new Date().toISOString() }, trials: [{}, {}] })],
   ]);
   fixtures.veeva = await makeArchive("veeva_ctv", [["ctv.db", Buffer.from("SQLite format 3\0fake")]]);
+  // CDE 完整归档是 nested 布局：顶层必须有包目录（读取方扫含 summary.json 的子目录）。
+  fixtures.cdeCorpus = await makeArchive("xyb_cde_pancreatic", [
+    ["胰腺癌/summary.json", JSON.stringify({ json_count: 1, success_count: 1 })],
+    ["胰腺癌/json/CTR20130061.json", JSON.stringify({ reg_no: "CTR20130061" })],
+  ]);
 
   // 清单键必须是 corpusId：`resolveEntry` 按 corpusId 查清单，键写错会得到
   // CORPUS_NOT_IN_MANIFEST 或者（更糟）命中一个大小对不上的旧条目。
@@ -175,6 +190,9 @@ before(async () => {
     cde_pancreatic: fixtures.cde,
     ictrp_pancreatic_cancer: fixtures.ictrp,
     veeva_ctv: fixtures.veeva,
+    // 注意：`cde_corpus_pancreatic` 是 `xyb_cde_pancreatic` 的别名
+    // （CORPUS_ALIASES，已发布资产改不了名），解析后打在这个键上。
+    xyb_cde_pancreatic: fixtures.cdeCorpus,
   });
 });
 
@@ -384,6 +402,55 @@ describe("失败绝不破坏已有数据", () => {
     assert.equal(result.ok, false);
     assert.equal(result.reason, "DOWNLOAD_FAILED");
     assert.match(result.message, /本地语料镜像失败/);
+  });
+});
+
+describe("需要挂载的语料必须真的挂上", () => {
+  /**
+   * 这条守的是一个**会静默通过**的缺陷：CDE 完整归档解压后住在 corpora/，
+   * 而 MCP 只扫 output/。少了挂载，下载/校验/解压全对、probe 也报 installed，
+   * 查询却永远 0 条——正是最该防住的那种失败。
+   */
+  it("cde_corpus_pancreatic 声明了 mount，其余四个不需要", () => {
+    const seeds = freshSeeds();
+    const withMount = seeds.SEEDS.filter((s) => typeof s.mount === "function").map((s) => s.corpusId);
+    // 只有它「装到哪」与「从哪读」不同。
+    assert.deepEqual(withMount, ["cde_corpus_pancreatic"]);
+  });
+
+  it("安装后挂载点出现在读取方扫描的目录里", async () => {
+    const seeds = freshSeeds();
+    const result = await seeds.applyInstall("cde_corpus_pancreatic", {
+      consent: true,
+      urlOverride: fixtures.cdeCorpus.url,
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.ok(result.mounted, "结果里必须带挂载情况");
+
+    // output/<包名> 必须存在，且指向 corpora/<包名>。
+    const outputRoot = join(fakeHome, ".xyb-chinadrugtrials", "output");
+    const entries = readdirSync(outputRoot);
+    assert.ok(entries.length > 0, `output/ 不能是空的——那正是这个缺陷的样子`);
+
+    const mount = join(outputRoot, entries[0]);
+    assert.ok(lstatSync(mount).isSymbolicLink(), "挂载点应是符号链接");
+    const target = readlinkSync(mount);
+    assert.match(target, /corpora/);
+  });
+
+  it("挂载失败时如实报错，不谎报安装成功", async () => {
+    const seeds = freshSeeds();
+    // 让 output/ 位置被一个**文件**占住，mkdir 必失败。
+    const outputRoot = join(fakeHome, ".xyb-chinadrugtrials", "output");
+    mkdirSync(join(fakeHome, ".xyb-chinadrugtrials"), { recursive: true });
+    writeFileSync(outputRoot, "占位", "utf8");
+
+    const result = await seeds.applyInstall("cde_corpus_pancreatic", {
+      consent: true,
+      urlOverride: fixtures.cdeCorpus.url,
+    });
+    assert.equal(result.ok, false, "挂不上就不能算装好");
+    assert.match(result.reason, /^MOUNT_FAILED/);
   });
 });
 

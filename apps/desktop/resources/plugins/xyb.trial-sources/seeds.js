@@ -46,7 +46,7 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 
-const { CorpusError, fetchCorpus, readManifest } = require("./corpus.js");
+const { CorpusError, fetchCorpus, mountCorpusPackages, readManifest } = require("./corpus.js");
 
 /**
  * GitHub 下载的网络提示。
@@ -132,6 +132,17 @@ const SEEDS = [
         userData: false,
       },
     ],
+    // 装完必须挂载，否则「安装成功」是个谎话。
+    //
+    // 这个包解压后住在 corpora/，而 CDE 的 MCP 只扫 `<根>/output/<关键词>/`。
+    // 少了这一步，下载、校验、解压全都对，`describeSeeds` 也会报 installed，
+    // 但查询永远 0 条——恰恰是这套流程最该防住的那种失败。挂载点必须与 MCP 的
+    // `OUTPUT_ROOT = path.join(DATA_DIR, "output")` 一致。
+    mount: (fetched) => ({
+      packageDirs: fetched.packageDirs ?? [],
+      outputRoot: path.join(os.homedir(), ".xyb-chinadrugtrials", "output"),
+      label: "chinadrugtrials",
+    }),
     probe: () => probeCdeCorpus(),
   },
   {
@@ -393,8 +404,31 @@ async function applyInstall(corpusId, options = {}) {
     return { ok: false, reason: fetched.reason ?? "FETCH_FAILED", corpusId, plan, fetched };
   }
 
+  // 有些语料装到的地方**不是**读取方看的地方，中间要挂一道（见 cde_corpus 的
+  // `mount` 注释）。不做这一步，安装会「成功」而查询永远为空。
+  let mounted = null;
+  if (typeof seed.mount === "function") {
+    onProgress({ phase: "mount", corpusId, message: "正在挂载到读取位置…" });
+    const spec = seed.mount(fetched);
+    mounted = await mountCorpusPackages(spec);
+    if (!mounted.ok) {
+      // 挂载失败要如实报错。数据是装好了，但读不到——把它说成成功，用户就会
+      // 拿一个空结果当成「没有相关试验」。
+      onProgress({ phase: "failed", corpusId, message: mounted.reason });
+      return {
+        ok: false,
+        reason: `MOUNT_FAILED:${mounted.reason}`,
+        corpusId,
+        plan,
+        fetched,
+        mounted,
+        message: "数据已下载，但未能挂载到查询读取的位置，因此这次不能算装好。",
+      };
+    }
+  }
+
   onProgress({ phase: "done", corpusId, message: "安装完成" });
-  return { ok: true, reason: "INSTALLED", corpusId, plan, fetched };
+  return { ok: true, reason: "INSTALLED", corpusId, plan, fetched, mounted };
 }
 
 /** 面板要展示的完整状态：每个种子现在是什么样、能否更新。 */
