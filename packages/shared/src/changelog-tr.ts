@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.2",
+    "date": "2026-10-06",
+    "highlights": [
+      "Deneme kaynakları artık uygulama içinden kurulabilen veya güncellenebilen beş çevrimdışı veri paketiyle geliyor; daha yeni bir anlık görüntü için uygulamayı yeniden kurmak gerekmiyor.",
+      "Bu paketler GitHub Releases üzerinden indirilir; Çin anakarasında VPN veya proxy olmadan indirme genellikle zaman aşımına uğrar ve panel bunu siz tıklamadan önce söyler.",
+      "Kendi topladığınız verilerin üzerine yazacak her şey önce listelenir ve onayınız alınır; beş paketin konumu hangi dosyaların söz konusu olduğunu tam olarak gösterir.",
+      "İndirilemeyen, sağlama toplamı tutmayan veya açılamayan bir paket, mevcut verilerinizi olduğu gibi bırakır.",
+      "CDE arşivi artık sorgunun gerçekten okuduğu yere bağlanıyor. Önceden bir kurulum başarı bildirirken tüm aramalar sessizce boş dönebiliyordu.",
+      "macOS yol sabitini doğrulayan bir test macOS'un kendisinde asla geçemiyordu ve yerel Rust paketini kırmızı bırakıyordu; artık beklentisini çalıştığı platformdan türetiyor.",
+    ],
+  },
+  {
     "version": "0.17.1",
     "date": "2026-10-06",
     "highlights": [

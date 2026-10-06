@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.2",
+    "date": "2026-10-06",
+    "highlights": [
+      "Studienquellen liefern jetzt fünf Offline-Datenpakete, die sich direkt in der App installieren oder aktualisieren lassen – ein neuerer Schnappschuss erfordert keine Neuinstallation mehr.",
+      "Diese Pakete werden von GitHub Releases geladen; in Festlandchina läuft der Download ohne VPN oder Proxy meist in einen Timeout, und das Panel sagt das, bevor Sie klicken.",
+      "Alles, was selbst gescrapte Daten überschreiben würde, wird zuerst aufgelistet und bestätigt; die fünf Ablageorte zeigen genau, welche Dateien betroffen sind.",
+      "Ein Paket, das nicht heruntergeladen werden kann, dessen Prüfsumme nicht stimmt oder das sich nicht entpacken lässt, lässt Ihre vorhandenen Daten unverändert.",
+      "Das CDE-Archiv wird jetzt dort eingebunden, wo die Abfrage tatsächlich liest. Zuvor konnte eine Installation Erfolg melden, während jede Suche still leer zurückkam.",
+      "Ein Test, der ein macOS-Pfadliteral prüfte, konnte auf macOS selbst nie bestehen und hielt die lokale Rust-Suite rot; er leitet seine Erwartung nun von der laufenden Plattform ab.",
+    ],
+  },
+  {
     "version": "0.17.1",
     "date": "2026-10-06",
     "highlights": [
