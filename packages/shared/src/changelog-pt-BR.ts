@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.17.1",
+    "date": "2026-10-06",
+    "highlights": [
+      "As fontes de ensaios agora incluem cinco pacotes de dados offline que podem ser instalados ou atualizados no local, então um novo instantâneo não exige mais reinstalar o aplicativo.",
+      "Antes de sobrescrever qualquer coisa, você é consultado: vários desses locais também são onde os seus próprios dados coletados ficam, e o aplicativo lista primeiro os arquivos exatos.",
+      "Um pacote que não baixa, cuja soma de verificação não confere ou que não descompacta deixa os seus dados existentes intactos em vez de substituí-los pela metade.",
+      "O arquivo CDE é montado onde a consulta realmente lê. Antes, uma instalação podia informar sucesso enquanto toda busca voltava vazia.",
+      "O painel agora mostra tanto onde um pacote é instalado quanto de onde é lido, porque em dois deles esses caminhos são diferentes.",
+      "Uma fonte cujo serviço não conseguiu conectar informa isso, em vez de oferecer silenciosamente um resultado vazio.",
+    ],
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-05",
     "highlights": [

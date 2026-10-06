@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.1",
+    "date": "2026-10-06",
+    "highlights": [
+      "Araştırma kaynakları artık yerinde kurulabilen veya güncellenebilen beş çevrimdışı veri paketiyle geliyor; yeni bir anlık görüntü için uygulamayı yeniden kurmak gerekmiyor.",
+      "Herhangi bir şeyin üzerine yazılmadan önce size soruluyor: bu konumların birkaçı kendi kazıma sonuçlarınızın da indiği yerler ve uygulama önce tam olarak hangi dosyalar olduğunu listeliyor.",
+      "İndirilemeyen, sağlama toplamı tutmayan veya açılamayan bir paket, mevcut verilerinizi yarı yolda değiştirmek yerine olduğu gibi bırakır.",
+      "CDE arşivi artık sorgunun gerçekten okuduğu yere bağlanıyor. Önceden bir kurulum başarılı görünürken her arama boş dönebiliyordu.",
+      "Panel artık bir paketin nereye kurulduğunu ve nereden okunduğunu birlikte gösteriyor; çünkü iki pakette bu yollar farklı.",
+      "Hizmetine bağlanılamayan bir kaynak, sessizce boş sonuç vermek yerine bunu bildiriyor.",
+    ],
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-05",
     "highlights": [

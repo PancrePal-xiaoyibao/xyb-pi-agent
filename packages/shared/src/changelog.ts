@@ -30,6 +30,18 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.17.1",
+      date: "2026-10-06",
+      highlights: [
+        "Trial sources now ship with five offline data packs you can install or update in place, so a new snapshot no longer means reinstalling the app.",
+        "Before anything is overwritten you are asked: several of those locations are also where your own scraping lands, and the app lists the exact files first.",
+        "A pack that fails to download, fails its checksum, or will not unpack leaves your existing data untouched rather than half-replaced.",
+        "The CDE archive is mounted where the query actually reads it. Previously an install could report success while every search came back empty.",
+        "The panel now shows both where a pack is installed and where it is read from, because for two of the packs those are different paths.",
+        "A pack whose service failed to connect says so instead of quietly offering an empty result.",
+      ],
+  },
+  {
     version: "0.17.0",
     date: "2026-10-05",
     highlights: [
@@ -895,6 +907,18 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.17.1",
+      date: "2026-10-06",
+      highlights: [
+        "试验来源现在随包分发五个离线数据包，可以就地安装或更新，拿到新快照不再需要重装应用。",
+        "覆盖之前会先问你：其中几个位置同时是你自己抓取数据的落点，应用会先列出具体是哪些文件。",
+        "下载失败、校验不符、解压不开的数据包都会原样保留你已有的数据，而不是换到一半。",
+        "CDE 归档现在挂在查询真正读取的位置。此前安装可能报成功，而每次检索都返回空。",
+        "面板同时显示数据包装到哪、以及从哪里被读取——其中两个包的这两个路径并不相同。",
+        "服务连不上的来源会如实说明原因，而不是悄悄给一个空结果。",
+      ],
+  },
+  {
     version: "0.17.0",
     date: "2026-10-05",
     highlights: [
@@ -1759,6 +1783,18 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.17.1",
+      date: "2026-10-06",
+      highlights: [
+        "試驗來源現在隨包提供五個離線資料包，可以就地安裝或更新，拿到新快照不再需要重裝應用程式。",
+        "覆蓋之前會先問你：其中幾個位置同時是你自己抓取資料的落點，應用程式會先列出具體是哪些檔案。",
+        "下載失敗、校驗不符、解壓不開的資料包都會原樣保留你既有的資料，而不是換到一半。",
+        "CDE 封存檔現在掛在查詢真正讀取的位置。先前安裝可能回報成功，而每次檢索都傳回空。",
+        "面板同時顯示資料包裝到哪、以及從哪裡被讀取——其中兩個包的這兩個路徑並不相同。",
+        "服務連不上的來源會如實說明原因，而不是悄悄給一個空結果。",
+      ],
+  },
   {
     version: "0.17.0",
     date: "2026-10-05",

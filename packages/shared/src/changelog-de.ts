@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.17.1",
+    "date": "2026-10-06",
+    "highlights": [
+      "Studienquellen liefern jetzt fünf Offline-Datenpakete, die sich direkt installieren oder aktualisieren lassen – ein neuer Schnappschuss erfordert keine Neuinstallation der App mehr.",
+      "Bevor etwas überschrieben wird, werden Sie gefragt: Mehrere dieser Orte sind auch dort, wo Ihre eigenen Scraping-Ergebnisse landen, und die App listet zuerst die genauen Dateien auf.",
+      "Ein Paket, das nicht heruntergeladen werden kann, dessen Prüfsumme nicht stimmt oder das sich nicht entpacken lässt, lässt Ihre vorhandenen Daten unangetastet, statt sie halb zu ersetzen.",
+      "Das CDE-Archiv wird dort eingebunden, wo die Abfrage tatsächlich liest. Zuvor konnte eine Installation Erfolg melden, während jede Suche leer zurückkam.",
+      "Das Panel zeigt jetzt sowohl, wohin ein Paket installiert wird, als auch, woher es gelesen wird – bei zwei Paketen sind das unterschiedliche Pfade.",
+      "Eine Quelle, deren Dienst keine Verbindung herstellen konnte, sagt das, statt stillschweigend ein leeres Ergebnis anzubieten.",
+    ],
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-05",
     "highlights": [
