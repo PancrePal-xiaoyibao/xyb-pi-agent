@@ -799,6 +799,8 @@ ICTRP 与本项目已接入的任何一个来源都不同，其差异**直接决
 1. **Python 可执行文件存在**：探测 `python3 --version`，要求 ≥ 3.10。失败 → `NEEDS_SETUP`，原因码 `PYTHON_RUNTIME_MISSING`，提示安装 Python 3.10+。
 2. **服务模块可导入**：`python3 -c "import ictrp_mcp.server"`（`PYTHONPATH` 指向随包目录）。失败 → `NEEDS_SETUP`，原因码 `VENDOR_FILES_MISSING`，说明随包文件缺失或损坏（**这属于打包事故，必须报错而非降级**）。
 3. **依赖可导入**：`python3 -c "import mcp, httpx, pydantic"`。失败 → `NEEDS_SETUP`，原因码 `PYTHON_DEPS_MISSING`，给出用户侧可执行的修复命令 `python3 -m pip install --user mcp httpx pydantic`，并在 UI 中作为**可复制的一行命令**呈现。
+
+   > **勘误（mcp 2.x）：** 上游 `pyproject.toml` 只声明 `mcp>=1.5.0`、没有上限，但 mcp 2.0（2026-07-28 发布）移除了随包服务注册工具所用的低层 `Server.list_tools()` 装饰器：装了 2.x 时三个包都能 import，服务却在启动时以 `AttributeError: 'Server' object has no attribute 'list_tools'` 退出；而不带版本约束的 `pip install mcp` 现在装到的正是 2.x。因此第 3 步在 import 之外还读取已装 `mcp` 的版本（`trial-runtime.ts` 的 `DEPS_PROBE_SCRIPT`）：主版本 ≥ 2 记 `PYTHON_DEPS_MISSING`（不兼容即「所需依赖未满足」，不新增原因码）；读不到版本不作为证据，沿用 import 结论。修复命令中的 mcp 一律写成带引号的 `"mcp>=1.5,<2"`（`MCP_REQUIREMENT`）。httpx / pydantic 的下限不在本步核对范围内。
 4. **服务可握手**：MCP `initialize` 成功且 `tools/list` 含 `ictrp_search`。失败 → `NOT_QUERIED`（服务已声明但进程起不来），原因码 `SOURCE_LAUNCH_FAILED`。
 
 **原因码命名约定（唯一权威）：** 第 1 步用 `PYTHON_RUNTIME_MISSING`（Python 缺失或版本过低），第 2 步用 `VENDOR_FILES_MISSING`（随包模块缺失/损坏），第 3 步用 `PYTHON_DEPS_MISSING`（第三方依赖缺失），第 4 步用 `SOURCE_LAUNCH_FAILED`（进程起不来）。`COLLECTOR_NOT_READY` **不用于** ICTRP 探测链，它保留给「采集器已安装但本地归档尚未就绪」这类 CDE 场景（见 §5.2 原因码表）。
