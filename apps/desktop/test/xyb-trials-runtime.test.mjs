@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEPS_PROBE_SCRIPT,
+  MCP_REQUIREMENT,
   MIN_PYTHON,
   RUNTIME_REASON_CODES,
   meetsMinPython,
@@ -24,6 +26,7 @@ function runner(outcomes) {
   return { run, calls, keys: () => calls.map((c) => `${c.command} ${c.args.join(" ")}`) };
 }
 
+const DEPS = `python3 -c ${DEPS_PROBE_SCRIPT}`;
 const ok = (stdout) => ({ ok: true, stdout });
 const missing = (code, message = "not found") => ({ ok: false, code, message });
 
@@ -97,7 +100,7 @@ test("unrecognised version output is unknown, not missing", async () => {
 
 test("missing dependencies are PYTHON_DEPS_MISSING with an install line", async () => {
   const r = runner({
-    'python3 -c import mcp, httpx, pydantic': missing("EXIT_1", "ModuleNotFoundError: No module named 'mcp'"),
+    [DEPS]:missing("EXIT_1", "ModuleNotFoundError: No module named 'mcp'"),
   });
   const result = await probePythonDeps(r.run);
   assert.equal(result.status, "missing");
@@ -107,7 +110,7 @@ test("missing dependencies are PYTHON_DEPS_MISSING with an install line", async 
 
 test("deps probe does not blame dependencies when the interpreter itself is absent", async () => {
   const r = runner({
-    'python3 -c import mcp, httpx, pydantic': missing("ENOENT", "spawn python3 ENOENT"),
+    [DEPS]:missing("ENOENT", "spawn python3 ENOENT"),
   });
   const result = await probePythonDeps(r.run);
   assert.equal(result.status, "unknown");
@@ -128,7 +131,7 @@ test("the chain stops at a missing interpreter instead of blaming dependencies",
 test("the chain proceeds to dependencies once the interpreter is usable", async () => {
   const r = runner({
     "python3 --version": ok("Python 3.11.6\n"),
-    'python3 -c import mcp, httpx, pydantic': missing("EXIT_1", "ModuleNotFoundError: No module named 'mcp'"),
+    [DEPS]:missing("EXIT_1", "ModuleNotFoundError: No module named 'mcp'"),
   });
   const result = await probeIctrpRuntime(r.run);
   assert.equal(result.reasonCode, RUNTIME_REASON_CODES.PYTHON_DEPS_MISSING);
@@ -138,7 +141,7 @@ test("the chain proceeds to dependencies once the interpreter is usable", async 
 test("a fully working runtime reports ok", async () => {
   const r = runner({
     "python3 --version": ok("Python 3.11.6\n"),
-    'python3 -c import mcp, httpx, pydantic': ok(""),
+    [DEPS]:ok(""),
   });
   const result = await probeIctrpRuntime(r.run);
   assert.equal(result.status, "ok");
@@ -151,7 +154,7 @@ test("an inconclusive step keeps the chain from claiming success", async () => {
   // unconfigured, and a false `ok` restores the misleading NOT_QUERIED.
   const r = runner({
     "python3 --version": missing("PROBE_TIMEOUT", "slow"),
-    'python3 -c import mcp, httpx, pydantic': ok(""),
+    [DEPS]:ok(""),
   });
   const result = await probeIctrpRuntime(r.run);
   assert.equal(result.status, "unknown");
@@ -173,7 +176,7 @@ test("the deps probe imports every module upstream declares", async () => {
   // probe that imports a subset answers a different question: `mcp`, `httpx`
   // and `pydantic` are all in the upstream `pyproject.toml` dependency list,
   // so all three have to be imported for a pass to mean anything.
-  const r = runner({ 'python3 -c import mcp, httpx, pydantic': ok("") });
+  const r = runner({ [DEPS]: ok("") });
   await probePythonDeps(r.run);
   const probed = r.keys()[0].split("import ")[1].split(",").map((name) => name.trim());
   for (const declared of ["mcp", "httpx", "pydantic"]) {
@@ -188,7 +191,7 @@ test("a non-import failure is unknown, not a missing dependency", async () => {
   // that just failed — a fabricated diagnosis with a copy button.
   const r = runner({
     "python3 --version": ok("Python 3.11.6\n"),
-    'python3 -c import mcp, httpx, pydantic': missing(
+    [DEPS]:missing(
       "EXIT_1",
       "ImportError: cannot import name 'Client' from 'httpx' (broken install)",
     ),
@@ -204,7 +207,7 @@ test("the fix line names the module that is actually missing", async () => {
   // "works", but the user cannot tell whether it changed anything, and the
   // command contradicts the sentence above it.
   const r = runner({
-    'python3 -c import mcp, httpx, pydantic': missing(
+    [DEPS]:missing(
       "EXIT_1",
       "ModuleNotFoundError: No module named 'pydantic'",
     ),
@@ -214,5 +217,35 @@ test("the fix line names the module that is actually missing", async () => {
   assert.match(result.explanation, /pydantic/);
   assert.match(result.fixCommand, /pip install pydantic\b/);
   assert.doesNotMatch(result.fixCommand, /\bmcp\b/, "已装好的包不应出现在修复命令里");
+});
+
+// ---------------------------------------------------------------------------
+// mcp 2.0 removed the `Server.list_tools()` decorator the vendored service
+// registers its tools with. A 2.x install imports cleanly, so an import-only
+// probe said `ok` while the server died at startup — and the probe's own fix
+// line, an unpinned `pip install mcp`, now installs 2.x.
+// ---------------------------------------------------------------------------
+
+test("an importable mcp 2.x is an incompatible dependency, not ok", async () => {
+  const r = runner({ [DEPS]: ok("2.3.0\n") });
+  const result = await probePythonDeps(r.run);
+  assert.equal(result.status, "missing");
+  assert.equal(result.reasonCode, RUNTIME_REASON_CODES.PYTHON_DEPS_MISSING);
+  assert.match(result.explanation, /mcp 2\.3\.0/);
+  assert.match(result.fixCommand, /-m pip install "mcp>=1\.5,<2"$/);
+});
+
+test("mcp 1.x passes, and an unreadable version keeps the import verdict", async () => {
+  for (const stdout of ["1.30.0\n", "1.5.0\n", "\n"]) {
+    const result = await probePythonDeps(runner({ [DEPS]: ok(stdout) }).run);
+    assert.equal(result.status, "ok", `mcp 版本输出 ${JSON.stringify(stdout)} 不应判为不兼容`);
+  }
+});
+
+test("a missing mcp is installed within the supported range", async () => {
+  const r = runner({ [DEPS]: missing("EXIT_1", "ModuleNotFoundError: No module named 'mcp'") });
+  const result = await probePythonDeps(r.run);
+  assert.equal(MCP_REQUIREMENT, "mcp>=1.5,<2");
+  assert.match(result.fixCommand, /pip install "mcp>=1\.5,<2"/, "修复命令装的版本必须能让服务启动");
 });
 

@@ -165,6 +165,26 @@ export async function probePython(
 }
 
 /**
+ * The `mcp` versions the vendored service runs on.
+ *
+ * Upstream declares `mcp>=1.5.0` with no ceiling, but mcp 2.0 (2026-07-28)
+ * removed the low-level `Server.list_tools()` decorator the service registers
+ * its tools with. On 2.x every import succeeds and the server then dies at
+ * startup with `AttributeError: 'Server' object has no attribute
+ * 'list_tools'`. An unpinned `pip install mcp` now installs 2.x, so the fix
+ * line must carry the range, quoted so no shell reads `<` as a redirect.
+ */
+export const MCP_REQUIREMENT = "mcp>=1.5,<2";
+
+/**
+ * Imports every declared dependency, then prints the installed `mcp`
+ * version (empty when no distribution metadata is found).
+ */
+export const DEPS_PROBE_SCRIPT =
+  "import mcp, httpx, pydantic, importlib.metadata as m; " +
+  "print(next((d.version for d in m.distributions(name='mcp')), ''))";
+
+/**
  * Probe the vendored service's third-party dependencies.
  *
  * Imports the modules upstream declares in `pyproject.toml` (`mcp`, `httpx`,
@@ -173,18 +193,31 @@ export async function probePython(
  * `mcp.types` re-exports pydantic types, so importing it proves the transitive
  * dependency too — but probing it by name reports *which* one is missing, and
  * the fix line the user is told to run must name what actually failed.
+ *
+ * Importable is not enough for `mcp`: a 2.x install imports cleanly and still
+ * cannot start the service (see `MCP_REQUIREMENT`), so the probe also reads
+ * its version. An unreadable version is not evidence either way and keeps the
+ * import verdict.
  */
 export async function probePythonDeps(
   runner: CommandRunner = defaultRunner,
   command = "python3",
   env: Record<string, string> = {},
 ): Promise<ProbeResult> {
-  const result = await runner(
-    command,
-    ["-c", "import mcp, httpx, pydantic"],
-    PROBE_TIMEOUT_MS,
-  );
-  if (result.ok) return { status: "ok", explanation: "Python 依赖已就绪。" };
+  const result = await runner(command, ["-c", DEPS_PROBE_SCRIPT], PROBE_TIMEOUT_MS);
+  if (result.ok) {
+    const version = result.stdout.trim();
+    const major = Number(/^(\d+)\./.exec(version)?.[1]);
+    if (major >= 2) {
+      return {
+        status: "missing",
+        reasonCode: RUNTIME_REASON_CODES.PYTHON_DEPS_MISSING,
+        explanation: `已安装的 mcp ${version} 与随包 WHO ICTRP 服务不兼容：服务需要 mcp 1.x（1.5 及以上），mcp 2.0 起移除了它注册工具所用的接口。`,
+        fixCommand: `python3 -m pip install "${MCP_REQUIREMENT}"`,
+      };
+    }
+    return { status: "ok", explanation: "Python 依赖已就绪。" };
+  }
   if (result.code === "ENOENT" || result.code === "PROBE_TIMEOUT") {
     // The interpreter itself is the problem; do not blame the dependencies.
     return { status: "unknown", explanation: "无法检测 Python 依赖：解释器不可用。" };
@@ -209,7 +242,9 @@ export async function probePythonDeps(
     status: "missing",
     reasonCode: RUNTIME_REASON_CODES.PYTHON_DEPS_MISSING,
     explanation: `随包 WHO ICTRP 服务缺少 Python 依赖：${unique.join("、")}。`,
-    fixCommand: `python3 -m pip install ${unique.join(" ")}`,
+    fixCommand: `python3 -m pip install ${unique
+      .map((name) => (name === "mcp" ? `"${MCP_REQUIREMENT}"` : name))
+      .join(" ")}`,
   };
 }
 
