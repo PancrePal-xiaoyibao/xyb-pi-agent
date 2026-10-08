@@ -78,11 +78,14 @@
   "id": "chinadrugtrials",
   "label": "中国药物临床试验登记与信息公示平台",
   "transport": "stdio",                       // stdio | http
-  "command": "./mcp/chinadrugtrials-mcp.mjs", // 相对插件目录
-  "args": [],
+  "command": "node",                           // 启动器，由宿主解析到真实 node
+  "args": ["mcp/chinadrugtrials-mcp.mjs"],     // 相对插件目录（cwd 即插件目录）
   "env": {}
 }
 ```
+
+- 自带的脚本服务一律写成「`node` + 相对脚本路径」，**不要**把 `./mcp/xxx.mjs` 直接写成 command：
+  直接执行靠 shebang + 执行位，Windows 不能直接执行 `.mjs`（`spawn EFTYPE`），装包后工具一个都没有。
 
 - 权限：`mcp.server.local`（stdio，拉起本机进程）与 `mcp.server.remote`（http）**都是 high、默认拒绝**，必须由用户逐条显式授权。
 - 三种落地形态，按"重量在哪"选：
