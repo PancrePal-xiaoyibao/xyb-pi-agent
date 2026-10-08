@@ -322,8 +322,11 @@ function targets() {
 
 const list = targets();
 if (!list.length) {
-  console.log("没有找到待检查的插件目录。");
-  process.exit(0);
+  // 本仓库一定带着 xyb.* 插件，一个都没找到只能说明门禁自己坏了（例如路径
+  // 拆分在某个平台上失效）。此时以 0 退出等于「什么都没查却显示通过」，
+  // 坏掉的 manifest 也会一起放行，所以按失败处理。
+  console.error(`没有找到待检查的插件目录（${PLUGINS_DIR} 下没有 xyb.* 插件）。门禁未检查任何插件，按失败处理。`);
+  process.exit(1);
 }
 
 let failed = 0;
