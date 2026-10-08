@@ -23,6 +23,9 @@
  */
 
 import { spawn } from "node:child_process";
+import nodePath from "node:path";
+
+import { discoverWindowsPython, resolveMcpStdioLaunch, type McpLaunchFs } from "./mcp-stdio-launch.ts";
 
 /** Reason codes for the ICTRP runtime chain (SPEC §15.3.5, the sole authority). */
 export const RUNTIME_REASON_CODES = Object.freeze({
@@ -68,7 +71,15 @@ const defaultRunner: CommandRunner = (command, args, timeoutMs) =>
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"] });
+      // Resolve the command exactly as the MCP launch will, so the probe judges
+      // the interpreter the service actually gets (on Windows, not the Store
+      // alias that a bare `python3` lands on).
+      const launch = resolveMcpStdioLaunch({ command, args: [...args], env: {} });
+      child = spawn(launch.command, launch.args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: launch.windowsHide,
+        windowsVerbatimArguments: launch.windowsVerbatimArguments,
+      });
     } catch (error) {
       // A synchronous throw is a missing/unusable executable, not a timeout.
       finish({ ok: false, message: (error as Error).message });
@@ -110,6 +121,26 @@ export function meetsMinPython(version: { major: number; minor: number }): boole
 }
 
 /**
+ * How to spell the interpreter in a fix line the user pastes into a terminal.
+ *
+ * On Windows `python3` is usually the Microsoft Store alias, and python.org
+ * installs often reach PATH only through the `py` launcher, so name what the
+ * launch resolves to instead of echoing the manifest's `python3`.
+ */
+export function pythonCommandLine(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  hostEnv: NodeJS.ProcessEnv = process.env,
+  fs?: McpLaunchFs,
+): string {
+  if (platform !== "win32") return command;
+  const python = discoverWindowsPython({ hostEnv, fs });
+  if (!python) return "python";
+  if (python.args[0] === "-3") return "py -3";
+  return nodePath.win32.basename(python.command).replace(/\.exe$/i, "");
+}
+
+/**
  * Probe the Python interpreter.
  *
  * Distinguishes three outcomes that a single failure would blur together: a
@@ -123,12 +154,14 @@ export async function probePython(
 ): Promise<ProbeResult> {
   const result = await runner(command, ["--version"], PROBE_TIMEOUT_MS);
   if (!result.ok) {
-    if (result.code === "ENOENT") {
+    // 9009 is the Windows exit code both for "not recognized" and for the
+    // Microsoft Store alias that stands in for an absent Python: no interpreter.
+    if (result.code === "ENOENT" || result.code === "EXIT_9009") {
       return {
         status: "missing",
         reasonCode: RUNTIME_REASON_CODES.PYTHON_RUNTIME_MISSING,
         explanation: `未找到 ${command}。WHO ICTRP 渠道由一段随包 Python 服务提供，需要 Python ${MIN_PYTHON.major}.${MIN_PYTHON.minor} 或更高版本。`,
-        fixCommand: "python3 --version",
+        fixCommand: `${pythonCommandLine(command)} --version`,
       };
     }
     if (result.code === "PROBE_TIMEOUT") {
@@ -158,7 +191,7 @@ export async function probePython(
       status: "missing",
       reasonCode: RUNTIME_REASON_CODES.PYTHON_RUNTIME_MISSING,
       explanation: `Python ${version.major}.${version.minor} 版本过低，WHO ICTRP 渠道需要 ${MIN_PYTHON.major}.${MIN_PYTHON.minor} 或更高版本。`,
-      fixCommand: "python3 --version",
+      fixCommand: `${pythonCommandLine(command)} --version`,
     };
   }
   return { status: "ok", explanation: `Python ${version.major}.${version.minor} 可用。` };
@@ -209,7 +242,7 @@ export async function probePythonDeps(
     status: "missing",
     reasonCode: RUNTIME_REASON_CODES.PYTHON_DEPS_MISSING,
     explanation: `随包 WHO ICTRP 服务缺少 Python 依赖：${unique.join("、")}。`,
-    fixCommand: `python3 -m pip install ${unique.join(" ")}`,
+    fixCommand: `${pythonCommandLine(command)} -m pip install ${unique.join(" ")}`,
   };
 }
 

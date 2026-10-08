@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import {
   MIN_PYTHON,
@@ -9,6 +10,7 @@ import {
   probeIctrpRuntime,
   probePython,
   probePythonDeps,
+  pythonCommandLine,
 } from "../electron/main/trial-runtime.ts";
 
 /** A runner that answers from a scripted map, so no process is ever spawned. */
@@ -215,4 +217,44 @@ test("the fix line names the module that is actually missing", async () => {
   assert.match(result.fixCommand, /pip install pydantic\b/);
   assert.doesNotMatch(result.fixCommand, /\bmcp\b/, "已装好的包不应出现在修复命令里");
 });
+
+// ---------------------------------------------------------------------------
+// Windows: with no real Python, `python3` is the Microsoft Store alias. It is
+// found on PATH (no ENOENT), prints an install hint and exits 9009 — the same
+// code cmd uses for "not recognized". That is an absent interpreter and must
+// reach PYTHON_RUNTIME_MISSING (criterion 10), not an inconclusive `unknown`.
+// ---------------------------------------------------------------------------
+
+test("the Windows Store alias (exit 9009) is a missing interpreter, not unknown", async () => {
+  const r = runner({
+    "python3 --version": missing("EXIT_9009", "Python was not found; run without arguments to install from the Microsoft Store"),
+  });
+  const result = await probePython(r.run);
+  assert.equal(result.status, "missing");
+  assert.equal(result.reasonCode, RUNTIME_REASON_CODES.PYTHON_RUNTIME_MISSING);
+});
+
+test("fix lines name the interpreter Windows users can actually type", () => {
+  const win = path.win32;
+  const pythonOrg = win.join("C:", "Python311");
+  const systemRoot = win.join("C:", "Windows");
+  const windowsApps = win.join("C:", "Users", "zhao", "AppData", "Local", "Microsoft", "WindowsApps");
+  // Off Windows the manifest's spelling is already right.
+  assert.equal(pythonCommandLine("python3", "darwin"), "python3");
+  // python.exe on PATH beats the Store alias.
+  assert.equal(
+    pythonCommandLine("python3", "win32", { PATH: [windowsApps, pythonOrg].join(";"), PATHEXT: ".EXE" }, isFileIn([win.join(windowsApps, "python3.exe"), win.join(pythonOrg, "python.exe")])),
+    "python",
+  );
+  // Only the py launcher: the line must go through it.
+  assert.equal(
+    pythonCommandLine("python3", "win32", { PATH: windowsApps, PATHEXT: ".EXE", SystemRoot: systemRoot }, isFileIn([win.join(windowsApps, "python3.exe"), win.join(systemRoot, "py.exe")])),
+    "py -3",
+  );
+});
+
+function isFileIn(files) {
+  const set = new Set(files.map((file) => file.toLowerCase()));
+  return { isFile: (target) => set.has(target.toLowerCase()), realpath: (target) => target };
+}
 
