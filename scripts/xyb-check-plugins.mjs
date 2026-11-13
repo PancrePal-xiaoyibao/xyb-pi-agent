@@ -22,7 +22,7 @@
  *   node scripts/xyb-check-plugins.mjs apps/desktop/resources/plugins/xyb.trials
  */
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { basename, join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -74,7 +74,7 @@ function checkPlugin(dir) {
   }
 
   // 目录名 vs id
-  const dirName = dir.split("/").pop();
+  const dirName = basename(dir);
   if (m.id && m.id !== dirName) {
     warnings.push(`目录名(${dirName}) 与 manifest.id(${m.id}) 不一致`);
   }
@@ -307,8 +307,10 @@ function checkPlugin(dir) {
   return { dir, id: m.id, errors, warnings };
 }
 
+// 路径一律用 node:path 拆：Windows 上 join/resolve 给的是反斜杠，按 "/" 切
+// 拿到的是整条路径，于是一个插件都筛不出来，门禁以 0 退出——空跑却显示通过。
 function isXybPlugin(path) {
-  return path.split("/").pop().startsWith("xyb.");
+  return basename(path).startsWith("xyb.");
 }
 
 function targets() {
@@ -328,9 +330,9 @@ if (!list.length) {
 
 let failed = 0;
 for (const dir of list) {
-  const rel = dir.replace(REPO + "/", "");
+  const rel = relative(REPO, dir);
   const r = checkPlugin(dir);
-  const name = r.id || dir.split("/").pop();
+  const name = r.id || basename(dir);
   if (r.errors.length) {
     failed++;
     console.log(`\n✗ ${name}  (${rel})`);
