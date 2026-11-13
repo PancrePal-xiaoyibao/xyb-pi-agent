@@ -185,13 +185,17 @@ CTV 检索走**本地索引**而非实时站点，因为 `ctv.veeva.com` 的 `ro
 ### 声明形态
 
 ```json
-{ "id": "chinadrugtrials", "transport": "stdio", "command": "./mcp/chinadrugtrials-mcp.mjs" }
+{ "id": "chinadrugtrials", "transport": "stdio", "command": "node", "args": ["mcp/chinadrugtrials-mcp.mjs"] }
 ```
 
-用**插件内相对可执行文件**，不是绝对路径（宿主会拒），也不是 `npx`（少一层网络与缓存不确定性）。
-依据：`host-core/src/plugins/validation.rs` 对含 `/` 的 command 做 `safe_join(root, command)`
-并检查文件存在；`scripts/xyb-check-plugins.mjs` 同步补了**执行位**检查——
-宿主是直接 exec 这个文件的，缺执行位会 EACCES，表现是「插件启用了但一个工具都没有」，最难定位。
+用 `node` 启动**插件内相对路径的脚本**，不是绝对路径（宿主会拒），也不是 `npx`（少一层网络与缓存不确定性）。
+宿主以插件目录为 cwd 拉起子进程，所以 args 里的相对路径落在插件内；`node` 走宿主的
+启动器解析（PATH / fnm / nvm-windows / Volta），GUI 进程 PATH 里没有 node 时也找得到。
+
+**不要**把 `./mcp/xxx.mjs` 直接写成 command：那要靠 shebang + 执行位，macOS / Linux 能跑，
+Windows 不能直接执行 `.mjs`，宿主拉起时 `spawn EFTYPE`，表现是「插件启用了但一个工具都没有」。
+回归测试：`apps/desktop/test/xyb-chinadrugtrials-parse.test.mjs` 里按 manifest 原样声明、
+经宿主启动链路（`McpServerClient`）握手的那一条。
 
 ### 组成
 

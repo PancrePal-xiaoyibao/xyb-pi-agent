@@ -67,7 +67,10 @@
         "id": "chinadrugtrials",
         "label": "中国药物临床试验登记与信息公示平台",
         "transport": "stdio",
-        "command": "./mcp/chinadrugtrials-mcp.mjs"
+        "command": "node",
+        "args": [
+          "mcp/chinadrugtrials-mcp.mjs"
+        ]
       },
       {
         "id": "who-ictrp",

@@ -203,14 +203,41 @@ function callTool({ dataDir, name, args = {}, serverPath = MCP_PATH, env = {} })
       stdio: ["pipe", "pipe", "pipe"],
     });
     let out = "";
-    const timer = setTimeout(() => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       child.kill();
-      reject(new Error("MCP 调用超时（10s）"));
+      fn(value);
+    };
+    // 收到 id=2 的响应就解析，而不是在固定时刻去读：Windows 上每次拉起 Python
+    // 都要 1–2s，get_collector_status 要探测好几次解释器，固定 3.5s 窗口会把
+    // 「还没答完」误判成「没有响应」。总时限仍是下面的 10s。
+    const timer = setTimeout(() => {
+      finish(reject, new Error(`MCP 调用超时（10s）；stdout=${out.slice(0, 400)}`));
     }, 10000);
     child.stdout.on("data", (chunk) => {
       out += chunk;
+      for (const line of out.split("\n")) {
+        if (!line.trim()) continue;
+        let msg;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (msg.id !== 2) continue;
+        const text = msg.result?.content?.[0]?.text;
+        if (!text) return finish(reject, new Error("工具未返回文本内容"));
+        try {
+          return finish(resolve, JSON.parse(text));
+        } catch (error) {
+          return finish(reject, new Error(`工具返回不是 JSON：${error.message}`));
+        }
+      }
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(reject, error));
     const send = (msg) => child.stdin.write(`${JSON.stringify(msg)}\n`);
     send({
       jsonrpc: "2.0",
@@ -233,28 +260,6 @@ function callTool({ dataDir, name, args = {}, serverPath = MCP_PATH, env = {} })
         }),
       500,
     );
-    setTimeout(() => {
-      clearTimeout(timer);
-      child.kill();
-      for (const line of out.split("\n")) {
-        if (!line.trim()) continue;
-        let msg;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (msg.id !== 2) continue;
-        const text = msg.result?.content?.[0]?.text;
-        if (!text) return reject(new Error("工具未返回文本内容"));
-        try {
-          return resolve(JSON.parse(text));
-        } catch (error) {
-          return reject(new Error(`工具返回不是 JSON：${error.message}`));
-        }
-      }
-      reject(new Error(`未收到 id=2 的响应；stdout=${out.slice(0, 400)}`));
-    }, 3500);
   });
 }
 
@@ -443,4 +448,44 @@ test("list_archived 过滤不存在的目录时必须说明「不是没有试验
     "目录存在（即便为空）不应出现缺失告警",
   );
   await fsp.rm(fresh, { recursive: true, force: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 按 manifest 原样声明、经宿主真实启动链路拉起服务。
+//
+// 上面的用例都直接 spawn(process.execPath, [server])，绕过了宿主的命令解析，
+// 所以「manifest 写 ./mcp/chinadrugtrials-mcp.mjs、靠 shebang + 执行位启动」
+// 在 Windows 上 spawn EFTYPE（Windows 不能直接执行 .mjs）也一直是绿的。
+// 这里走 McpServerClient（resolveMcpCommand + resolveMcpStdioLaunch），
+// 声明一旦退回到「直接执行脚本」，Windows 上就会在这里失败。
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("manifest 声明的 chinadrugtrials 服务能经宿主启动链路握手", async (t) => {
+  const { McpServerClient } = await import("../electron/main/plugin-mcp.ts");
+  const root = path.dirname(pluginDir);
+  const manifest = JSON.parse(await fsp.readFile(path.join(root, "manifest.json"), "utf8"));
+  const server = manifest.contributes.mcpServers.find((s) => s.id === "chinadrugtrials");
+  assert.ok(server, "manifest 必须声明 chinadrugtrials");
+  assert.ok(
+    !/[\\/]/.test(server.command),
+    "command 必须是 PATH 上的启动器（node），不能是脚本路径：Windows 无法直接执行 .mjs",
+  );
+
+  const fresh = await fsp.mkdtemp(path.join(os.tmpdir(), "cdt-launch-"));
+  const client = new McpServerClient({
+    pluginId: "xyb.trial-sources",
+    rootPath: root,
+    serverId: server.id,
+    server,
+    values: { XYB_CHINADRUCTRIALS_DATA_DIR: fresh },
+  });
+  t.after(async () => {
+    await client.close();
+    await fsp.rm(fresh, { recursive: true, force: true });
+  });
+  const tools = await client.connect();
+  assert.ok(
+    tools.some((tool) => tool.name === "get_collector_status"),
+    "握手后必须列出 get_collector_status",
+  );
 });

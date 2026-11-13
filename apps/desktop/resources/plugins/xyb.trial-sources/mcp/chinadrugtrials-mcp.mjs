@@ -133,12 +133,19 @@ function run(command, args, options = {}) {
   });
 }
 
-/** 解释器优先级：专用 venv → PATH 上的 python3 → 系统路径。 */
+/**
+ * 解释器优先级：专用 venv → PATH 上的 python3 → 系统路径。
+ *
+ * Windows 上 python.org / winget 安装的解释器只叫 `python`；PATH 上的
+ * `python3` 往往是微软商店的占位别名，只打印安装提示并以 9009 退出。
+ * 所以 Windows 在 `python3` 之后补试 `python`（版本探测会过滤掉占位别名）。
+ */
 async function resolvePython() {
   const candidates = [
     path.join(VENV_DIR, "bin", "python3"),
     path.join(VENV_DIR, "Scripts", "python.exe"), // Windows
     "python3",
+    ...(process.platform === "win32" ? ["python"] : []),
     "/usr/bin/python3",
   ];
   for (const candidate of candidates) {
@@ -634,19 +641,27 @@ async function toolSetupEnvironment() {
     if (deps.ok) return { ok: true, already_ready: true, python: python.command, version: python.version };
   }
 
+  // Windows 没有 /usr/bin/python3，拿它重建 venv 必然失败，用户会卡在 create_venv
+  // 再也走不到装依赖。venv 已在时（例如上次 pip 因网络失败）直接复用它装依赖。
+  const reuseVenv = python.fromVenv && process.platform === "win32";
   const base = python.fromVenv ? "/usr/bin/python3" : python.command;
   await ensureDirs();
 
-  const venv = await run(base, ["-m", "venv", VENV_DIR], { timeoutMs: 120000 });
-  if (venv.code !== 0) {
-    return {
-      ok: false,
-      stage: "create_venv",
-      error: `${venv.stdout}${venv.stderr}`.trim().slice(-1200),
-    };
+  if (!reuseVenv) {
+    const venv = await run(base, ["-m", "venv", VENV_DIR], { timeoutMs: 120000 });
+    if (venv.code !== 0) {
+      return {
+        ok: false,
+        stage: "create_venv",
+        error: `${venv.stdout}${venv.stderr}`.trim().slice(-1200),
+      };
+    }
   }
 
-  const pip = path.join(VENV_DIR, "bin", "pip");
+  const pip =
+    process.platform === "win32"
+      ? path.join(VENV_DIR, "Scripts", "pip.exe")
+      : path.join(VENV_DIR, "bin", "pip");
   const install = await run(
     pip,
     ["install", "--disable-pip-version-check", "-r", REQUIREMENTS],
